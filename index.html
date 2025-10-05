@@ -1,0 +1,51 @@
+<!-- FederatedHomes/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Federated Homes</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+        }
+        .kpi-card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+            transition: transform 0.2s ease-in-out;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
+        }
+        .positive {
+            color: #10B981; /* Green-500 */
+        }
+        .negative {
+            color: #EF4444; /* Red-500 */
+        }
+        .neutral {
+            color: #6B7280; /* Gray-500 */
+        }
+        .main-container {
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="main-container max-w-7xl mx-auto py-8">
+        <h1 class="text-5xl font-extrabold text-center text-gray-800 mb-12">
+            <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+                Collection of Federated Homes Components
+            </span>
+        </h1>
+
+        <div id="kpi-dashboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- KPI Cards will be injected here by JavaScript -->
+            <p class="text-center text-gray-500 text-lg col-span-full">Loading Components...</p>
+        </div>
+    </div>
+
+</body>
+</html>
