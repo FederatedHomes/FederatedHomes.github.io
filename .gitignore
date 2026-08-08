@@ -1,0 +1,41 @@
+## macOS
+.DS_Store
+
+## Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+## Ruby / Jekyll
+.bundle/
+_site/
+.jekyll-cache/
+Gemfile.lock
+
+## Python
+__pycache__/
+*.pyc
+
+## Editor directories and files
+.vscode/
+.idea/
+*.sublime-workspace
+
+## Logs
+*.log
+
+## Optional: OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## Secrets
+.env
+
+# Generated client datasets and checkpoints
+/machine_learning/data/
+/machine_learning/checkpoints/
+
+# flower apps runtime state
+/machine_learning/.flwr/*
+!/machine_learning/.flwr/config.toml

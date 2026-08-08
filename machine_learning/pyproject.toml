@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "federated-learning"
+version = "1.1.6"
+description = "Federated Learning with PyTorch and Flower"
+license = {file = "LICENSE"}
+dependencies = [
+    "flwr[simulation]>=1.33.0",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "pandas>=2.0.0",
+    "numpy>=2.0.0",
+    "Pillow>=10.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.flwr.app]
+publisher = "prjoshi"
+fab-format-version = 1
+flwr-version-target = "1.33.0"
+
+[tool.flwr.app.components]
+serverapp = "src.server_app:app"
+clientapp = "src.client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 2
+fraction-evaluate = 1.0
+local-epochs = 1
+learning-rate = 0.1
+batch-size = 32
+save-model = false
