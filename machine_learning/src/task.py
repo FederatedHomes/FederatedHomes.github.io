@@ -98,10 +98,14 @@ class CSVFeatureDataset(Dataset):
         return {"img": image, "label": label}
 
 
+TRAIN_DATA_FILE = os.environ.get("TRAIN_DATA_FILE", "train.csv")
+VAL_DATA_FILE = os.environ.get("VAL_DATA_FILE", "val.csv")
+
+
 def load_client_data(data_dir: str, batch_size: int):
     """Load local CSV client data from the mounted data directory."""
-    train_csv = Path(data_dir) / "train.csv"
-    val_csv = Path(data_dir) / "val.csv"
+    train_csv = Path(data_dir) / TRAIN_DATA_FILE
+    val_csv = Path(data_dir) / VAL_DATA_FILE
 
     train_dataset = CSVFeatureDataset(str(train_csv), transform=pytorch_transforms)
     val_dataset = CSVFeatureDataset(str(val_csv), transform=pytorch_transforms)
@@ -113,7 +117,7 @@ def load_client_data(data_dir: str, batch_size: int):
 
 def load_server_data(data_dir: str, batch_size: int):
     """Load test set and return dataloader."""
-    val_csv = Path(data_dir) / "val.csv"
+    val_csv = Path(data_dir) / VAL_DATA_FILE
     val_dataset = CSVFeatureDataset(str(val_csv), transform=pytorch_transforms)
 
     testloader = DataLoader(val_dataset, batch_size=batch_size)

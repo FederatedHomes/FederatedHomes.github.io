@@ -1,6 +1,5 @@
 ---
-tags: [quickstart, vision, fds]
-dataset: [CIFAR-10]
+tags: [federated, machine learning, vision, fds]
 framework: [torch, torchvision]
 ---
 
@@ -22,7 +21,10 @@ Each client can mount its own local CSV dataset from `./data/<client>/` and save
 
 ## Dependency refinement
 
-Dependencies are defined in `pyproject.toml` and installed into the `flwr_superexec:local` image used by both the server and client app containers.
+`requirements.txt` is the source of runtime dependencies installed into the `flwr_superexec:local` image during Docker build.
+The base image `flwr/superexec:1.33.0` already contains the Flower runtime, so `requirements.txt` deliberately omits `flwr` and installs only the additional application packages.
+
+`pyproject.toml` remains the Python package metadata file used for local development, packaging, and the Flower app config, but it is no longer the build-time dependency source for the Docker image.
 
 ## Data structure
 
@@ -68,7 +70,7 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-`setup.sh` now presents an interactive menu with the following options:
+`setup.sh` presents an interactive menu with the following options:
 
 1. setup required directories and environment file only
 2. start the trainer service

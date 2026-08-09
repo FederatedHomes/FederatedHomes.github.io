@@ -7,8 +7,11 @@ name = "federated-learning"
 version = "1.1.6"
 description = "Federated Learning with PyTorch and Flower"
 license = {file = "LICENSE"}
+# Package metadata dependencies used for Python packaging and local development.
+# The Docker build installs runtime dependencies from requirements.txt instead,
+# because the base image already provides the Flower runtime.
 dependencies = [
-    "flwr[simulation]>=1.33.0",
+    "flwr>=1.33.0",
     "torch==2.10.0",
     "torchvision==0.25.0",
     "pandas>=2.0.0",
@@ -34,4 +37,4 @@ fraction-evaluate = 1.0
 local-epochs = 1
 learning-rate = 0.1
 batch-size = 32
-save-model = false
+save-model = true

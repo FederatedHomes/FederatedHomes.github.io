@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 cd "$ROOT_DIR"
 
 create_directories() {
+  mkdir -p data/global
+  mkdir -p checkpoints/global
   mkdir -p data/client1
   mkdir -p data/client2
   mkdir -p checkpoints/client1

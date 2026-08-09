@@ -6,10 +6,16 @@ from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
+import json
+
 from src.task import Net, load_server_data, test
 
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 32))
+CHECKPOINT_DIR = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
+MODEL_BASE_NAME = os.environ.get("MODEL_BASE_NAME", "final_model.pt")
+GLOBAL_MODEL_PREFIX = os.environ.get("GLOBAL_MODEL_PREFIX", "global")
+METRICS_BASE_NAME = os.environ.get("METRICS_BASE_NAME", "final_metrics.json")
 
 # Create ServerApp
 app = ServerApp()
@@ -41,10 +47,25 @@ def main(grid: Grid, context: Context) -> None:
     )
 
     if context.run_config["save-model"]:
+        # Save final global metrics
+        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+        final_round = max(result.evaluate_metrics_serverapp.keys())
+        final_metrics = dict(result.evaluate_metrics_serverapp.get(final_round, {}))
+        metrics_path = os.path.join(
+            CHECKPOINT_DIR,
+            f"{GLOBAL_MODEL_PREFIX}_{METRICS_BASE_NAME}",
+        )
+        with open(metrics_path, "w", encoding="utf-8") as f:
+            json.dump(final_metrics, f, indent=2)
+
         # Save final model to disk
         print("\nSaving final model to disk...")
         state_dict = result.arrays.to_torch_state_dict()
-        torch.save(state_dict, "final_model.pt")
+        model_path = os.path.join(
+            CHECKPOINT_DIR,
+            f"{GLOBAL_MODEL_PREFIX}_{MODEL_BASE_NAME}",
+        )
+        torch.save(state_dict, model_path)
 
 
 def global_evaluate(server_round: int, arrays: ArrayRecord) -> MetricRecord:

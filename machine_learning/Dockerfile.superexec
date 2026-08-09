@@ -3,11 +3,12 @@ FROM flwr/superexec:1.33.0
 WORKDIR /app
 RUN mkdir -p /app/.flwr/apps && chmod -R a+rwx /app/.flwr
 
-# Install only the runtime dependencies required by the app, excluding the Flower runtime itself.
-COPY pyproject.toml /app/
+ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+
+# Install additional runtime dependencies not provided by the base flwr/superexec:1.33.0 image.
+COPY requirements.txt /app/
 RUN python -m pip install --upgrade pip && \
-    python -c "from pathlib import Path; import tomllib; project = tomllib.loads(Path('pyproject.toml').read_text())['project']; reqs = [r for r in project['dependencies'] if not r.startswith('flwr')]; Path('/tmp/req.txt').write_text('\n'.join(reqs))" && \
-    if [ -s /tmp/req.txt ]; then pip install --no-cache-dir -r /tmp/req.txt; fi
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy only the files required for the app runtime.
 COPY src/ /app/src/

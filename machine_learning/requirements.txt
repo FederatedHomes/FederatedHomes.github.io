@@ -1,0 +1,6 @@
+# flwr/superexec:1.33.0 provides the Flower runtime and framework.
+torch==2.10.0+cpu
+torchvision==0.25.0+cpu
+pandas>=2.0.0
+numpy>=2.0.0
+Pillow>=10.0.0
