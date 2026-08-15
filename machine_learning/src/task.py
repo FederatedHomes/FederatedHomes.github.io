@@ -190,11 +190,13 @@ class StreamingDataset(IterableDataset):
         Handles missing values and returns a numpy array of shape (segment_length, num_features) and the corresponding label.
         """
         # identify the columns that are not label columns
-        self.feature_columns = [c for c in chunk.columns if c not in self.label_columns]
-        self.num_features = len(self.feature_columns)
+        feature_columns = [c for c in chunk.columns if c not in self.label_columns]
+        self.num_features = len(feature_columns)
+        # create dict of column indices to feature names for consistent ordering
+        self.dict_idx_feature = {i: col for i, col in enumerate(feature_columns)}
 
         # forward fill, backward fill, and then fill remaining NaNs with 0 in the feature columns
-        chunk[self.feature_columns] = chunk[self.feature_columns].ffill().bfill().fillna(0)
+        chunk[feature_columns] = chunk[feature_columns].ffill().bfill().fillna(0)
 
         # create a single label by taking the mode of the label column in the segment
         label = chunk[self.label_columns].mode().iloc[0].to_numpy()
@@ -202,12 +204,12 @@ class StreamingDataset(IterableDataset):
         # convert the chunk to a numpy array
         segment_array = chunk.to_numpy()
 
-        segment_cwt_images = self.create_cwt_images(segment_array, wavelet_name='morl', rescale_size=self.num_scales, log_scale=True)
+        segment_cwt_matrix = self.create_cwt_matrix(segment_array, wavelet_name='morl', rescale_size=self.num_scales, log_scale=True)
         # dummy_feature_array = np.random.rand(self.num_scales, self.num_scales, self.num_features)  # Placeholder: replace with actual feature extraction logic
 
-        return segment_cwt_images, label
+        return segment_cwt_matrix, label
 
-    def create_cwt_images(self, segment_array, wavelet_name='morl', rescale_size=128, log_scale=False):
+    def create_cwt_matrix(self, segment_array, wavelet_name='morl', rescale_size=128, log_scale=False):
         import pywt
         from skimage.transform import resize
 
@@ -217,16 +219,16 @@ class StreamingDataset(IterableDataset):
         if log_scale:
             scales = np.logspace(np.log(1), np.log(self.num_scales+1), num=self.num_scales, base=np.e, dtype=np.float32)
 
-        # preallocate array for CWT images
-        cwt_array = np.ndarray(shape=(rescale_size, rescale_size, self.num_features), dtype=np.float32)
+        # preallocate matrix for CWT images
+        cwt_matrix = np.ndarray(shape=(rescale_size, rescale_size, self.num_features), dtype=np.float32)
 
-        for signal in range(self.num_features):
-            signal_data = segment_array[:, signal]
+        for signal_idx,signal_name in self.dict_idx_feature.items():
+            signal_data = segment_array[:, signal_idx]
             coeffs, freqs = pywt.cwt(signal_data, scales, wavelet_name)
             coeffs_resized = resize(coeffs, (rescale_size, rescale_size), mode='constant', anti_aliasing=True)
-            cwt_array[:, :, signal] = coeffs_resized
+            cwt_matrix[:, :, signal_idx] = coeffs_resized
 
-        return cwt_array
+        return cwt_matrix
 
 
     def __iter__(self):
@@ -243,7 +245,8 @@ class StreamingDataset(IterableDataset):
 
             # While the buffer has enough data to create a segment, process it
             while len(buffer) >= self.segment_length:
-                buffer_segment = buffer.iloc[:self.segment_length]
+                # Process the first segment_length rows sorted by column index to ensure consistent feature ordering
+                buffer_segment = buffer.iloc[:self.segment_length].sort_index(axis=1)
                 feature, label = self.create_feature_and_label(buffer_segment)
 
                 # Convert to pytorch tensors moving channels to the front
@@ -251,7 +254,12 @@ class StreamingDataset(IterableDataset):
                 label_tensor = torch.tensor(label, dtype=torch.long)
 
                 # Yield the feature-label pair as a dictionary
-                yield {"img": feature_tensor, "label": label_tensor}
+                yield {
+                    "data": buffer_segment[list(self.dict_idx_feature.values())].to_numpy(), 
+                    "dict_idx_feature": self.dict_idx_feature, 
+                    "feature_tensor": feature_tensor, 
+                    "label_tensor": label_tensor
+                }
 
                 # Slide the buffer forward by step_size
                 buffer = buffer.iloc[self.step_size:].reset_index(drop=True)
@@ -271,41 +279,50 @@ class Utilities:
         return label_indices
 
     @staticmethod
-    def plot_cwt_coeffs_per_label(X, label_indices, label_names, signal, sample, scales, wavelet):
+    def plot_cwt_coeffs_per_label(X, y, signal, sample, scales, wavelet):
         import matplotlib.pyplot as plt
         import pywt
 
-        fig,axs = plt.subplots(nrows=2, ncols=len(label_names), sharex=True, sharey="row", figsize=(8, 5*len(label_names)))
+        unique_labels = np.unique(y)
+        label_indices = {str(label): np.where(y == label)[0] for label in unique_labels}
+        print(f"Split indices into {len(unique_labels)} unique labels: {list(label_indices.keys())}")
+
+        n_labels = len(label_indices)
+        fig, axs = plt.subplots(
+            nrows=2,
+            ncols=n_labels,
+            sharex=True,
+            sharey="row",
+            figsize=(8, 5 * n_labels)
+        )
         vmin_val = None
         vmax_val = None
 
-        for ax,indices,name in zip(axs.flat[0::len(label_names)], label_indices, label_names):
-            # Apply PyWavelets CWT to the signal
-            coeffs, freqs = pywt.cwt(X[indices[sample],:,signal], scales, wavelet)
-            vmin_val = coeffs.min() if not vmin_val else vmin_val
-            vmax_val = coeffs.max() if not vmax_val else vmax_val
+        # display the scalogram for each label in the first row of subplots
+        for ax, indices, name in zip(axs[0], label_indices.values(), label_indices.keys()):
+            coeffs, freqs = pywt.cwt(X[indices[sample], :, signal], scales, wavelet)
+            vmin_val = coeffs.min() if vmin_val is None else vmin_val
+            vmax_val = coeffs.max() if vmax_val is None else vmax_val
 
-            # create scalogram
             im = ax.imshow(coeffs, cmap='coolwarm', aspect='auto', vmin=vmin_val, vmax=vmax_val)
             ax.set_title(name)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
 
-            # Add local colorbar above the image
             cbar = plt.colorbar(im, ax=ax, orientation='horizontal', pad=0.03, location='top')
             cbar_ticks = [coeffs.min(), coeffs.mean(), coeffs.max()]
             cbar.set_ticks(cbar_ticks)
             cbar.ax.set_xticklabels([f"{tick:.0f}" for tick in cbar_ticks])
             cbar.ax.set_xlabel('Signal Intensity', rotation=0, va='top', labelpad=15)
-        ax.flat[0].set_ylabel('Scale')
+        axs[0, 0].set_ylabel('Scale')
 
         # display the original timeseries signal below the scalograms
-        for ax,indices,name in zip(axs.flat[len(label_names):], label_indices, label_names):
-            ax.plot(X[indices[sample],:,signal])
+        for ax, indices, name in zip(axs[1], label_indices.values(), label_indices.keys()):
+            ax.plot(X[indices[sample], :, signal])
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             ax.set_xlabel('Time')
-        axs.flat[len(label_names)].set_ylabel('Signal Value')
+        axs[1, 0].set_ylabel('Signal Value')
 
         fig.tight_layout()
 
@@ -321,7 +338,7 @@ if __name__ == "__main__":
     OVERLAP_FRACTION = 0.5
     NUM_SCALES = 32
     LABEL_COLUMNS = ["Sensor_5"]  # Adjust based on your CSV structure
-    BATCH_SIZE = 4
+    BATCH_SIZE = 5
 
     dataset = StreamingDataset(
         csv_path=CSV_FILE_PATH,
@@ -333,8 +350,20 @@ if __name__ == "__main__":
 
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE)
     utilities = Utilities()
+    plotting_enabled = True  # Set to False to disable plotting
     for batch in dataloader:
-        print(batch["img"].shape, batch["label"].shape)
+        print(batch["data"].shape, batch["feature_tensor"].shape, batch["label_tensor"].shape)
+        print(f"Feature names: {batch['dict_idx_feature']}")
+        if plotting_enabled:
+            utilities.plot_cwt_coeffs_per_label(
+                X=batch["data"].numpy(),
+                y=batch["label_tensor"].numpy(),
+                signal=0,  # Change this to visualize different signals
+                sample=0,  # Change this to visualize different samples
+                scales=np.arange(1, NUM_SCALES + 1),
+                wavelet='morl'
+            )
+            plotting_enabled = False  # Disable further plotting after the first batch
 
 
     
