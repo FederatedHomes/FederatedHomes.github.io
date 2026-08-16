@@ -70,6 +70,7 @@ services:
       - flwr-network
     volumes:
       - ./checkpoints/global:${CHECKPOINT_DIR}
+      - ./data/global:${DATA_DIR}
     depends_on:
       - superlink
       - supernode-1

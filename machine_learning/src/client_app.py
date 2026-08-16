@@ -4,7 +4,6 @@ import json
 import os
 
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 32))
 CLIENT_ID = os.environ.get("CLIENT_ID", "0")
 CHECKPOINT_DIR = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
 MODEL_BASE_NAME = os.environ.get("MODEL_BASE_NAME", "final_model.pt")
@@ -15,9 +14,9 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from src.task import Net, load_client_data
-from src.task import test as test_fn
-from src.task import train as train_fn
+from src.task import CustomNet, load_client_data
+from src.task import test_model
+from src.task import train_model
 
 
 def save_client_checkpoint(model: torch.nn.Module) -> None:
@@ -56,17 +55,21 @@ app = ClientApp()
 def train(msg: Message, context: Context):
     """Train the model on local data."""
 
+    # Load the client-local data
+    trainloader, valloader = load_client_data(DATA_DIR)
+
+    batch = next(iter(trainloader))
+    in_channels = batch["feature_tensor"].shape[1]
+    num_classes = 5
+
     # Load the model and initialize it with the received weights
-    model = Net()
+    model = CustomNet(in_channels=in_channels, num_classes=num_classes)
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # Load the client-local data
-    trainloader, valloader = load_client_data(DATA_DIR, BATCH_SIZE)
-
     # Call the training function
-    train_loss = train_fn(
+    train_loss = train_model(
         model,
         trainloader,
         context.run_config["local-epochs"],
@@ -78,7 +81,7 @@ def train(msg: Message, context: Context):
 
     metrics = {
         "train_loss": train_loss,
-        "num-examples": len(trainloader.dataset),
+        "num-examples": len(list(trainloader)),
     }
     save_client_metrics(metrics, key="train_metrics")
 
@@ -93,17 +96,21 @@ def train(msg: Message, context: Context):
 def evaluate(msg: Message, context: Context):
     """Evaluate the model on local data."""
 
+    # Load the client-local data
+    _, valloader = load_client_data(DATA_DIR)
+
+    batch = next(iter(valloader))
+    in_channels = batch["feature_tensor"].shape[1]
+    num_classes = 5
+
     # Load the model and initialize it with the received weights
-    model = Net()
+    model = CustomNet(in_channels=in_channels, num_classes=num_classes)
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # Load the client-local data
-    _, valloader = load_client_data(DATA_DIR, BATCH_SIZE)
-
     # Call the evaluation function
-    eval_loss, eval_acc = test_fn(
+    eval_loss, eval_acc = test_model(
         model,
         valloader,
         device,
