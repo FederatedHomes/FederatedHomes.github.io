@@ -87,7 +87,7 @@ def global_evaluate(server_round: int, arrays: ArrayRecord) -> MetricRecord:
     model.to(device)
 
     # Evaluate the global model on the test set
-    test_loss, test_acc = test_model(model, test_dataloader, device)
+    test_loss, test_acc, total_examples  = test_model(model, test_dataloader, device)
 
     # Return the evaluation metrics
-    return MetricRecord({"accuracy": test_acc, "loss": test_loss})
+    return MetricRecord({"accuracy": test_acc, "loss": test_loss, "num-examples": total_examples})

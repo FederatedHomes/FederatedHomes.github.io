@@ -56,7 +56,7 @@ def train(msg: Message, context: Context):
     """Train the model on local data."""
 
     # Load the client-local data
-    trainloader, valloader = load_client_data(DATA_DIR)
+    trainloader, _ = load_client_data(DATA_DIR)
 
     batch = next(iter(trainloader))
     in_channels = batch["feature_tensor"].shape[1]
@@ -69,7 +69,7 @@ def train(msg: Message, context: Context):
     model.to(device)
 
     # Call the training function
-    train_loss = train_model(
+    train_loss, total_examples = train_model(
         model,
         trainloader,
         context.run_config["local-epochs"],
@@ -81,7 +81,7 @@ def train(msg: Message, context: Context):
 
     metrics = {
         "train_loss": train_loss,
-        "num-examples": len(list(trainloader)),
+        "num-examples": total_examples,
     }
     save_client_metrics(metrics, key="train_metrics")
 
@@ -110,7 +110,7 @@ def evaluate(msg: Message, context: Context):
     model.to(device)
 
     # Call the evaluation function
-    eval_loss, eval_acc = test_model(
+    eval_loss, eval_acc, total_examples = test_model(
         model,
         valloader,
         device,
@@ -120,7 +120,7 @@ def evaluate(msg: Message, context: Context):
     metrics = {
         "eval_loss": eval_loss,
         "eval_acc": eval_acc,
-        "num-examples": len(valloader.dataset),
+        "num-examples": total_examples,
     }
     save_client_metrics(metrics, key="eval_metrics")
     metric_record = MetricRecord(metrics)

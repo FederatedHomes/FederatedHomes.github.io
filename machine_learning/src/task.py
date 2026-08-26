@@ -96,34 +96,57 @@ def train_model(net, trainloader, epochs, lr, device):
     optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9)
     net.train()
     running_loss = 0.0
+    total_examples = 0
+
     for epoch in range(epochs):
-        batches = list(trainloader)
-        for batch_index, batch in enumerate(batches):
-            features = batch["feature_tensor"].to(device)
-            labels = batch["label_tensor"].to(device)
+        it = iter(trainloader)
+        batch_index = 1
+
+        try:
+            current_batch = next(it)
+        except StopIteration:
+            continue
+
+        while True:
+            is_first_batch = (batch_index==1)
+
+            try:
+                next_batch = next(it)
+                is_last_batch = False
+            except StopIteration:
+                is_last_batch = True
+
+            features = current_batch["feature_tensor"].to(device)
+            labels = current_batch["label_tensor"].to(device)
             optimizer.zero_grad()
             loss = criterion(net(features), labels)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
 
-            # Visualize CWT coefficients for the first and last batch of the first epoch
-            is_first_batch = batch_index == 0
-            is_last_batch = batch_index == len(batches) - 1
-            if is_first_batch or is_last_batch and epoch == 0:
-                signal_dict = {i: name[0] for i, name in batch["dict_idx_feature"].items()}
+            total_examples += features.shape[0]
 
+            # Visualize CWT coefficients for the first and last batch of the first epoch
+            if is_first_batch or is_last_batch and epoch == 0:
+                signal_dict = {i: name[0] for i, name in current_batch["dict_idx_feature"].items()}
                 Utilities().plot_cwt_coeffs_per_label(
-                    X=batch["data"].numpy(),
-                    y=batch["label_tensor"].numpy(),
+                    X=current_batch["data"].numpy(),
+                    y=current_batch["label_tensor"].numpy(),
                     signal=np.random.choice(list(signal_dict.keys())),  # Choose a random signal to visualize
                     scales=np.arange(1, NUM_SCALES + 1),
                     wavelet='morl',
                     filename_prefix=f"batch_{batch_index}",
                     signal_dict=signal_dict
                 )
-    avg_trainloss = running_loss / (epochs * len(batches))
-    return avg_trainloss
+
+            if is_last_batch:
+                break
+
+            current_batch = next_batch
+            batch_index += 1
+            
+    avg_trainloss = running_loss / (epochs * batch_index)
+    return avg_trainloss, total_examples
 
 
 def test_model(net, testloader, device):
@@ -131,24 +154,40 @@ def test_model(net, testloader, device):
     net.to(device)
     criterion = torch.nn.CrossEntropyLoss()
     correct, loss = 0, 0.0
+    total_examples = 0
+
     with torch.no_grad():
-        batches = list(testloader)
-        for batch_index, batch in enumerate(batches):
-            features = batch["feature_tensor"].to(device)
-            labels = batch["label_tensor"].to(device)
+        it = iter(testloader)
+        batch_index = 1
+
+        try:
+            current_batch = next(it)
+        except StopIteration:
+            print("ERROR: Could not iterate over the test batch.")
+
+        while True:
+            is_first_batch = (batch_index==1)
+
+            try:
+                next_batch = next(it)
+                is_last_batch = False
+            except StopIteration:
+                is_last_batch = True
+
+            features = current_batch["feature_tensor"].to(device)
+            labels = current_batch["label_tensor"].to(device)
             outputs = net(features)
             loss += criterion(outputs, labels).item()
             correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
 
-            # Visualize CWT coefficients for the first and last batch
-            is_first_batch = batch_index == 0
-            is_last_batch = batch_index == len(batches) - 1
-            if is_first_batch or is_last_batch:
-                signal_dict = {i: name[0] for i, name in batch["dict_idx_feature"].items()}
+            total_examples += features.shape[0]
 
+            # Visualize CWT coefficients for the first and last batch
+            if is_first_batch or is_last_batch:
+                signal_dict = {i: name[0] for i, name in current_batch["dict_idx_feature"].items()}
                 Utilities().plot_cwt_coeffs_per_label(
-                    X=batch["data"].numpy(),
-                    y=batch["label_tensor"].numpy(),
+                    X=current_batch["data"].numpy(),
+                    y=current_batch["label_tensor"].numpy(),
                     signal=np.random.choice(list(signal_dict.keys())),  # Choose a random signal to visualize
                     scales=np.arange(1, NUM_SCALES + 1),
                     wavelet='morl',
@@ -156,9 +195,15 @@ def test_model(net, testloader, device):
                     signal_dict=signal_dict
                 )
 
-    accuracy = correct / len(batches)
-    loss = loss / len(batches)
-    return loss, accuracy
+            if is_last_batch:
+                break
+
+            current_batch = next_batch
+            batch_index += 1
+
+    accuracy = correct / batch_index
+    loss = loss / batch_index
+    return loss, accuracy, total_examples
 
 
 from torch.utils.data import DataLoader, IterableDataset
