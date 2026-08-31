@@ -2,13 +2,15 @@
 
 import os
 import torch
-from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
+from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord, Message
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
+from flwr.common import log, logger
 
 import json
 
 from src.task import CustomNet, load_server_data, test_model
+from src.data_contract import CONTRACT
 
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 CHECKPOINT_DIR = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
@@ -33,13 +35,39 @@ def main(grid: Grid, context: Context) -> None:
     test_dataloader = load_server_data(DATA_DIR)
     sample_batch = next(iter(test_dataloader))
     in_channels = sample_batch["feature_tensor"].shape[1]
-    num_classes = 5
+    num_classes = 2
 
     global_model = CustomNet(in_channels=in_channels, num_classes=num_classes)
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg strategy
-    strategy = FedAvg(fraction_evaluate=fraction_evaluate)
+    class ContractFedAvg(FedAvg):
+        """FedAvg that broadcasts the data contract and rejects schema violations."""
+
+        def configure_train(
+            self, server_round: int, arrays: ArrayRecord, config: ConfigRecord, grid: Grid
+        ) -> list[Message]:
+            # Inject the contract version into the per-round config sent to clients
+            config["contract-version"] = CONTRACT.version
+            return super().configure_train(server_round, arrays, config, grid)
+
+        def aggregate_train(
+            self, server_round: int, replies: list[Message]
+        ) -> tuple[ArrayRecord | None, MetricRecord | None]:
+            # Filter out clients that reported schema violations
+            valid_replies = []
+            for msg in replies:
+                metrics: MetricRecord = msg.content["metrics"]
+                if metrics.get("schema_violation", None):
+                    log(logger, "WARNING", "Client rejected (schema): %s", metrics["schema_violation"])
+                    continue
+                valid_replies.append(msg)
+
+            if not valid_replies:
+                return None, None
+            return super().aggregate_train(server_round, valid_replies)
+        
+    strategy = ContractFedAvg(fraction_evaluate=fraction_evaluate)
 
     # Start strategy, run FedAvg for `num_rounds`
     result = strategy.start(
@@ -79,7 +107,7 @@ def global_evaluate(server_round: int, arrays: ArrayRecord) -> MetricRecord:
     test_dataloader = load_server_data(DATA_DIR)
     sample_batch = next(iter(test_dataloader))
     in_channels = sample_batch["feature_tensor"].shape[1]
-    num_classes = 5
+    num_classes = 2
 
     model = CustomNet(in_channels=in_channels, num_classes=num_classes)
     model.load_state_dict(arrays.to_torch_state_dict())

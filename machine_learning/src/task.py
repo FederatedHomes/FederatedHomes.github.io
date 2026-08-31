@@ -24,7 +24,7 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 30))
 class CustomNet(nn.Module):
     """CNN tuned for the StreamingDataset CWT feature tensors."""
 
-    def __init__(self, in_channels: int = 1, num_classes: int = 10):
+    def __init__(self, in_channels: int = 2, num_classes: int = 2):
         super(CustomNet, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 6, kernel_size=5)
         self.pool = nn.MaxPool2d(2, 2)
@@ -224,7 +224,7 @@ class StreamingDataset(IterableDataset):
             self.synthetic = True
             self.synthetic_size = BATCH_SIZE
             self.num_synthetic_features = 4
-            self.num_synthetic_classes = 5
+            self.num_synthetic_classes = 2
             self._generate_synthetic_data()
             return
 
@@ -313,10 +313,12 @@ class StreamingDataset(IterableDataset):
             # While the buffer has enough data to create a segment, process it
             while len(buffer) >= self.segment_length:
                 # Process the first segment_length rows sorted by column index to ensure consistent feature ordering
+                #TODO: use Data Contract here to ensure contract-driven and deterministic pre-processing
+                # e.g. buffer_segment = buffer.iloc[:self.segment_length, [contract.feature_names.index(c) for c in contract.feature_names]]
                 buffer_segment = buffer.iloc[:self.segment_length].sort_index(axis=1)
                 feature, label = self.create_feature_and_label(buffer_segment)
 
-                # Convert to pytorch tensors moving channels to the front
+                # Convert to pytorch tensors with channels in the front
                 feature_tensor = torch.tensor(feature, dtype=torch.float32)
                 label_tensor = torch.tensor(label, dtype=torch.long)
 
@@ -374,14 +376,13 @@ class Utilities:
             vmax_val = coeffs.max() if vmax_val is None else vmax_val
 
             im = ax.imshow(coeffs, cmap='coolwarm', aspect='auto', vmin=vmin_val, vmax=vmax_val)
-            ax.set_title(name, fontsize=8, pad=5)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
 
             cbar = plt.colorbar(im, ax=ax, orientation='horizontal', pad=0.05, location='top')
             cbar_ticks = [coeffs.min(), coeffs.mean(), coeffs.max()]
             cbar.set_ticks(cbar_ticks)
-            cbar.ax.set_xticklabels([f"{tick:.0f}" for tick in cbar_ticks], fontsize=6)
+            cbar.ax.set_xticklabels([f"{tick:.1f}" for tick in cbar_ticks], fontsize=6)
             cbar.ax.set_xlabel(f'{signal_name} Intensity', rotation=0, va='top', labelpad=15, fontsize=10)
         axs[0, 0].set_ylabel('Scale')
 
@@ -391,6 +392,7 @@ class Utilities:
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             ax.set_xlabel('Time', fontsize=10)
+            ax.set_title(name, fontsize=10, pad=5)
         axs[1, 0].set_ylabel('Signal Value')
 
         fig.tight_layout()
@@ -399,7 +401,78 @@ class Utilities:
         plt.savefig(path_filename, dpi=300)
         print(f"Saved file to {path_filename}")
         plt.close(fig)
-        
+
+    @staticmethod
+    def create_confusion_matrix(y_true=None, y_pred=None, label_names:list=[]):
+            import seaborn as sns
+            from sklearn import metrics
+            import matplotlib.pyplot as plt
+
+            # determine the total accuracy
+            accuracy = f"{metrics.accuracy_score(y_true,y_pred):.2f}"
+            precision = f"{metrics.precision_score(y_true,y_pred):.2f}"
+            recall = f"{metrics.recall_score(y_true,y_pred):.2f}"
+
+            # calculate the confusion matrix
+            conf_matrix = metrics.confusion_matrix(y_true=y_true,y_pred=y_pred)
+
+            fig,ax = plt.subplots(figsize=(6,6))
+            ax = sns.heatmap(
+                conf_matrix,
+                fmt='g',
+                cmap=plt.cm.Blues,
+                cbar=False,
+                xticklabels=label_names,
+                yticklabels=label_names
+            )
+
+            ax.set_title(f"Confusion Matrix | Accuracy : {accuracy} | Precision: {precision} | Recall: {recall}")
+            ax.set_xlabel("Predicted Label")
+            ax.set_ylabel("True Label")
+
+            fig.tight_layout()
+
+            path_filename = os.path.join(os.getenv("DATA_DIR"), "ConfusionMatrix.png")
+            plt.savefig(path_filename, dpi=300)
+            print(f"Saved file to {path_filename}")
+            plt.close(fig)
+
+    @staticmethod
+    def pca_of_cwt_coeffs(X, n_scales, wavelet_name="morl"):
+        from sklearn.decomposition import PCA
+        # apply PCA for just a single component to get the most significant coefficient per scale
+        pca =  PCA(n_components=1)
+        # create a range of scales
+        scales = np.arange(1,n_scales+1)
+
+        X_pca = np.array([])
+        for signal in range(X.shape[2]):
+            pca_components = np.empty((0,n_scales), dtype='float32')
+            for sample in range(X.shape[0]):
+                coeffs, freqs = pywt.cwt(X[sample, :, signal], scales, wavelet_name)
+                pca_components = np.vstack([pca_components, pca.fit_transform(coeffs).flatten()])
+
+            if signal==0:
+                X_pca = pca_components
+            else:
+                X_pca = np.concatenate((X_pca, pca_components), axis=1)
+        return X_pca
+
+    @staticmethod
+    def build_and_fit_xgb_model(X_train, y_train, X_val, y_val, n_depth, subsample, n_estimators):
+        import xgboost as xgb
+        xgb_model = xgb.XGBClassifier(
+            max_depth = n_depth,
+            objective = 'multi:softmax',
+            num_classes = 2,
+            subsample = subsample,
+            n_estimators = n_estimators,
+            eval_metric = ["merror"]
+        )
+
+        eval_set = [(X_val,y_val)]
+        history = xgb_model.fit(X_train, y_train, eval_set=eval_set, verbose=True)
+        return xgb_model, history
 
 
 if __name__ == "__main__":
@@ -429,9 +502,9 @@ if __name__ == "__main__":
 
         if is_first_batch or is_last_batch:
             print(f"Batch {batch_index}: data shape {batch['data'].shape}, feature tensor shape {batch['feature_tensor'].shape}, label tensor shape {batch['label_tensor'].shape}")
-            print(f"Feature names: {batch['dict_idx_feature']}")
             utilities = Utilities()
             signal_dict = {i: name[0] for i, name in batch["dict_idx_feature"].items()}
+            print(f"Feature names and internal index: {signal_dict}")
             
             utilities.plot_cwt_coeffs_per_label(
                 X=batch["data"].numpy(),
