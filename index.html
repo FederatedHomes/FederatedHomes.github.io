@@ -1,51 +1,450 @@
 <!-- FederatedHomes/index.html -->
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Federated Homes</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        :root {
+            --purple: #49028a;
+            --purple-soft: rgba(73, 2, 138, 0.08);
+            --purple-faint: rgba(73, 2, 138, 0.16);
+            --black: #000;
+            --white: #fff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: "Inter", sans-serif;
-            background-color: #f0f4f8; /* Light blue-gray background */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--white);
+            color: var(--black);
+            overflow-x: hidden;
         }
-        .kpi-card {
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
-            transition: transform 0.2s ease-in-out;
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 40px 0px; }
+        header { text-align: center; margin-bottom: 60px; }
+
+        h1 { font-size: 3rem; color: var(--purple); margin-bottom: 15px; font-weight: 700; }
+        .subtitle { font-size: 1.2rem; color: var(--black); max-width: 600px; margin: 0 auto; line-height: 1.6; }
+
+        .visualization {
+            position: relative;
+            min-height: 600px;
+            background: var(--white);
+            box-shadow: 0 0 40px var(--purple-faint);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 60px;
+            padding: 40px;
         }
-        .kpi-card:hover {
-            transform: translateY(-5px);
+
+        .community-container,
+        .services-container {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            min-width: 0;
+            padding: 30px 20px;
+            border-radius: 20px;
         }
-        .positive {
-            color: #10B981; /* Green-500 */
+
+        .community-container { background: var(--purple-soft); }
+        .services-container { background: rgba(73, 2, 138, 0.04);}
+
+        .community-label,
+        .services-label {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            background: var(--white);
+            color: var(--purple);
+            padding: 5px 20px;
+            border: 1px solid rgba(73, 2, 138, 0.45);
+            border-radius: 15px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
         }
-        .negative {
-            color: #EF4444; /* Red-500 */
+
+        .clients-section,
+        .services-section {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
         }
-        .neutral {
-            color: #6B7280; /* Gray-500 */
+
+        .client,
+        .service {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .main-container {
-            min-height: 100vh;
+
+        .client-icon {
+            width: 90px;
+            height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: var(--purple);
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(73, 2, 138, 0.45);
+            color: var(--white);
+            font-size: 2.2rem;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .client-icon i { animation: float 3s ease-in-out infinite; }
+        .client-label, .service-label { margin-top: 12px; color: var(--black); font-size: 0.85rem; font-weight: 600; text-align: center; }
+        .service-label { max-width: 125px; line-height: 1.3; }
+
+        .data-sources { display: flex; gap: 10px; margin-top: 8px; }
+        .data-source {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--white);
+            border: 2px solid var(--purple);
+            border-radius: 8px;
+            color: var(--purple);
+            font-size: 0.8rem;
+        }
+
+        .federation-hub {
+            flex: 0 0 220px;
+            position: relative;
+            z-index: 3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .hub-icon {
+            width: 130px;
+            height: 130px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: var(--purple);
+            border: 4px solid var(--white);
+            border-radius: 50%;
+            box-shadow: 0 0 40px rgba(73, 2, 138, 0.52);
+            color: var(--white);
+            font-size: 3.2rem;
+            animation: hubGlow 3s ease-in-out infinite;
+        }
+
+        .hub-label {
+            max-width: 210px;
+            margin-top: 18px;
+            color: var(--purple);
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .hub-description { max-width: 180px; margin-top: 8px; color: var(--black); font-size: 0.8rem; line-height: 1.4; text-align: center; }
+        .interface-label {
+            margin-top: 15px;
+            padding: 5px 15px;
+            background: var(--purple-soft);
+            border: 1px solid rgba(73, 2, 138, 0.30);
+            border-radius: 12px;
+            color: var(--purple);
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .service-icon {
+            width: 85px;
+            height: 85px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 2;
+            background: var(--white);
+            border: 3px solid var(--purple);
+            border-radius: 15px;
+            box-shadow: 0 0 15px rgba(73, 2, 138, 0.28);
+            color: var(--purple);
+            font-size: 2rem;
+            animation: serviceGlow 2.5s ease-in-out infinite;
+        }
+
+        .request-dot {
+            position: absolute;
+            top: -7px;
+            right: -7px;
+            z-index: 5;
+            width: 18px;
+            height: 18px;
+            border: 3px solid var(--white);
+            border-radius: 50%;
+            background: var(--purple);
+            box-shadow: 0 0 10px var(--purple), 0 0 24px var(--purple), 0 0 42px rgba(73, 2, 138, 0.75);
+            pointer-events: none;
+            animation: requestDot 2.8s ease-out forwards;
+        }
+
+        .request-link-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 4;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+            pointer-events: none;
+        }
+
+        .request-link {
+            fill: none;
+            stroke: var(--purple);
+            stroke-width: 3;
+            stroke-linecap: round;
+            filter: drop-shadow(0 0 5px var(--purple));
+            stroke-dasharray: 10 8;
+            animation: requestLink 2.8s ease-out forwards;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(73, 2, 138, 0.45); }
+            50% { transform: scale(1.05); box-shadow: 0 0 30px rgba(73, 2, 138, 0.72); }
+        }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        @keyframes hubGlow {
+            0%, 100% { box-shadow: 0 0 40px rgba(73, 2, 138, 0.52); }
+            50% { box-shadow: 0 0 60px rgba(73, 2, 138, 0.80); }
+        }
+        @keyframes serviceGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(73, 2, 138, 0.28); }
+            50% { box-shadow: 0 0 25px rgba(73, 2, 138, 0.55); }
+        }
+        @keyframes requestDot {
+            0% { opacity: 0; transform: scale(0.25); }
+            14% { opacity: 1; transform: scale(1.15); }
+            25%, 70% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(0.25); }
+        }
+        @keyframes requestLink {
+            0% { opacity: 0; stroke-dashoffset: 80; }
+            14% { opacity: 0.95; }
+            70% { opacity: 0.8; stroke-dashoffset: 0; }
+            100% { opacity: 0; stroke-dashoffset: -80; }
+        }
+
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; margin-bottom: 60px; }
+        .feature-card { padding: 30px; background: var(--white); transition: transform 0.3s ease, box-shadow 0.3s ease; }
+        .feature-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(73, 2, 138, 0.25); }
+        .feature-icon { margin-bottom: 20px; color: var(--purple); font-size: 2.5rem; }
+        .feature-title { margin-bottom: 15px; color: var(--black); font-size: 1.3rem; font-weight: 600; }
+        .feature-description { color: var(--black); font-size: 0.95rem; line-height: 1.7; }
+
+        footer { padding: 40px 20px; border-top: 2px solid var(--purple); color: var(--black); text-align: center; }
+        .cta-button { display: inline-block; margin-top: 20px; padding: 15px 40px; background: var(--purple); border-radius: 30px; color: var(--white); font-size: 1.1rem; font-weight: 600; text-decoration: none; transition: transform 0.3s ease, box-shadow 0.3s ease; }
+        .cta-button:hover { transform: scale(1.05); box-shadow: 0 10px 30px rgba(73, 2, 138, 0.4); }
+
+        @media (max-width: 1024px) {
+            .visualization { flex-direction: column; padding: 40px 30px; }
+            .community-container, .services-container { width: 100%; padding: 25px 20px; }
+            .clients-section, .services-section { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 30px; }
+            .federation-hub { flex-basis: auto; margin: 10px 0; }
+            .community-label, .services-label { font-size: 0.75rem; padding: 4px 15px; }
+        }
+
+        @media (max-width: 600px) {
+            .container { padding: 30px 15px; }
+            header { margin-bottom: 40px; }
+            h1 { font-size: 2rem; }
+            .subtitle { font-size: 1rem; }
+            .visualization { padding: 30px 15px; margin-bottom: 40px; }
+            .community-container, .services-container { padding: 25px 10px; }
+            .clients-section, .services-section { gap: 22px; }
+            .client-icon { width: 72px; height: 72px; font-size: 1.8rem; }
+            .service-icon { width: 68px; height: 68px; font-size: 1.6rem; }
+            .hub-icon { width: 105px; height: 105px; font-size: 2.6rem; }
+            .features { grid-template-columns: 1fr; gap: 20px; margin-bottom: 40px; }
+            .feature-card { padding: 25px; }
+        }
+
+        @media (max-width: 400px) {
+            h1 { font-size: 1.6rem; }
+            .client-icon { width: 64px; height: 64px; font-size: 1.5rem; }
+            .service-icon { width: 60px; height: 60px; font-size: 1.4rem; }
+            .hub-icon { width: 92px; height: 92px; font-size: 2.3rem; }
+            .data-source { width: 28px; height: 28px; font-size: 0.7rem; }
+            .community-label, .services-label { font-size: 0.65rem; padding: 3px 12px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
         }
     </style>
 </head>
-<body class="bg-gray-100 p-8">
-    <div class="main-container max-w-7xl mx-auto py-8">
-        <h1 class="text-5xl font-extrabold text-center text-gray-800 mb-12">
-            <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
-                Collection of Federated Homes Components
-            </span>
-        </h1>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-network-wired"></i> FEDERATED HOMES</h1>
+            <p class="subtitle">Collaborative privacy-preserving intelligence with local data</p>
+        </header>
 
-        <div id="kpi-dashboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <!-- KPI Cards will be injected here by JavaScript -->
-            <p class="text-center text-gray-500 text-lg col-span-full">Loading Components...</p>
-        </div>
+        <main class="visualization" id="visualization">
+            <div class="community-container">
+                <div class="community-label"><i class="fas fa-users"></i> Community</div>
+                <div class="clients-section">
+                    <article class="client">
+                        <div class="client-icon"><i class="fas fa-home"></i></div>
+                        <div class="client-label">Client 1</div>
+                        <div class="data-sources" aria-label="Client 1 data sources">
+                            <div class="data-source" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
+                            <div class="data-source" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                        </div>
+                    </article>
+                    <article class="client">
+                        <div class="client-icon"><i class="fas fa-home"></i></div>
+                        <div class="client-label">Client 2</div>
+                        <div class="data-sources" aria-label="Client 2 data sources">
+                            <div class="data-source" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
+                            <div class="data-source" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                        </div>
+                    </article>
+                    <article class="client">
+                        <div class="client-icon"><i class="fas fa-home"></i></div>
+                        <div class="client-label">Client 3</div>
+                        <div class="data-sources" aria-label="Client 3 data sources">
+                            <div class="data-source" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
+                            <div class="data-source" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                        </div>
+                    </article>
+                </div>
+            </div>
+
+            <section class="federation-hub" aria-label="Communal Federation">
+                <div class="hub-icon"><i class="fas fa-shield-halved"></i></div>
+                <div class="hub-label">Communal Federation</div>
+                <div class="hub-description">TRUSTED ORCHESTRATION</div>
+                <div class="interface-label"><i class="fas fa-arrow-right-arrow-left"></i> Interface</div>
+            </section>
+
+            <div class="services-container">
+                <div class="services-label"><i class="fas fa-building"></i> Service Providers</div>
+                <div class="services-section">
+                    <article class="service">
+                        <div class="service-icon"><i class="fas fa-water"></i></div>
+                        <div class="service-label">Waste-Water Research</div>
+                    </article>
+                    <article class="service">
+                        <div class="service-icon"><i class="fas fa-bolt"></i></div>
+                        <div class="service-label">Electricity Providers</div>
+                    </article>
+                    <article class="service">
+                        <div class="service-icon"><i class="fas fa-glass-water"></i></div>
+                        <div class="service-label">Drinking Water Providers</div>
+                    </article>
+                </div>
+            </div>
+        </main>
+
+        <section class="features">
+            <article class="feature-card">
+                <div class="feature-icon"><i class="fas fa-lock"></i></div>
+                <h2 class="feature-title">Privacy-Preserving</h2>
+                <p class="feature-description">Data remains on client premises. Only model updates are shared with the trusted federation hub, preserving data sovereignty.</p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon"><i class="fas fa-brain"></i></div>
+                <h2 class="feature-title">Collaborative Intelligence</h2>
+                <p class="feature-description">Local models learn from consumption patterns and contribute to a robust global model for the whole community.</p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
+                <h2 class="feature-title">Predictive Insights</h2>
+                <p class="feature-description">The global model delivers consumption forecasts to service providers for resource allocation and infrastructure planning.</p>
+            </article>
+        </section>
+
+        <footer><p>&copy; 2026 FEDERATED HOMES | Built for Communities</p></footer>
     </div>
 
+    <script>
+        const visualization = document.getElementById('visualization');
+        const hubIcon = document.querySelector('.hub-icon');
+        let activeRequest = false;
+
+        function makeSvgElement(tag, attributes) {
+            const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+            Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
+            return element;
+        }
+
+        function requestPrediction() {
+            if (activeRequest || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            activeRequest = true;
+
+            const icons = [...document.querySelectorAll('.service-icon')];
+            const targetIcon = icons[Math.floor(Math.random() * icons.length)];
+            const dot = document.createElement('span');
+            dot.className = 'request-dot';
+            dot.setAttribute('aria-hidden', 'true');
+            targetIcon.appendChild(dot);
+
+            const visualRect = visualization.getBoundingClientRect();
+            const hubRect = hubIcon.getBoundingClientRect();
+            const dotRect = dot.getBoundingClientRect();
+            const startX = hubRect.left + hubRect.width / 2 - visualRect.left;
+            const startY = hubRect.top + hubRect.height / 2 - visualRect.top;
+            const endX = dotRect.left + dotRect.width / 2 - visualRect.left;
+            const endY = dotRect.top + dotRect.height / 2 - visualRect.top;
+            const bend = Math.max(36, Math.abs(endX - startX) * 0.32);
+
+            const svg = makeSvgElement('svg', {
+                class: 'request-link-layer',
+                viewBox: `0 0 ${visualRect.width} ${visualRect.height}`,
+                preserveAspectRatio: 'none',
+                'aria-hidden': 'true'
+            });
+            const path = makeSvgElement('path', {
+                class: 'request-link',
+                d: `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`
+            });
+            svg.appendChild(path);
+            visualization.appendChild(svg);
+
+            window.setTimeout(() => {
+                svg.remove();
+                dot.remove();
+                activeRequest = false;
+            }, 2800);
+        }
+
+        window.setTimeout(requestPrediction, 1200);
+        window.setInterval(requestPrediction, 5200);
+
+        document.querySelectorAll('.client-icon, .service-icon, .hub-icon').forEach(icon => {
+            icon.addEventListener('mouseenter', () => { icon.style.transform = 'scale(1.08) rotate(4deg)'; });
+            icon.addEventListener('mouseleave', () => { icon.style.transform = ''; });
+        });
+    </script>
 </body>
 </html>
