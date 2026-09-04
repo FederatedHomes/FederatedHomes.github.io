@@ -72,12 +72,14 @@ chmod +x setup.sh
 
 `setup.sh` presents an interactive menu with the following options:
 
-1. setup required directories and environment file only
-2. start the trainer service
-3. setup and then start the trainer
-4. exit
+1. Setup required directories, compose configuration, and environment file.
+2. Generate Compose configuration only
+3. Start the trainer service
+4. Setup and then start the trainer
+5. Show configured clients
+6. Exit
 
-When you choose option `3`, `setup.sh` performs the setup steps and then launches `docker compose up --build trainer`.
+When you choose option `4`, `setup.sh` performs the required setup steps, builds and then launches the `trainer` service that runs a federated learning session.
 If the trainer service completes successfully, the script automatically shuts down the Compose stack with `docker compose down`.
 
 You can customize Compose settings by editing `machine_learning/.env` or `machine_learning/.env.example` before running `setup.sh`.

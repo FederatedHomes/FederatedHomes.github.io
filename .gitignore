@@ -36,6 +36,9 @@ Desktop.ini
 /machine_learning/data/
 /machine_learning/checkpoints/
 
+# Generated docker-compose file
+/machine_learning/docker-compose.generated.yml
+
 # flower apps runtime state
 /machine_learning/.flwr/*
 !/machine_learning/.flwr/config.toml

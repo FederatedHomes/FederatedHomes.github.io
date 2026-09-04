@@ -4,14 +4,65 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 cd "$ROOT_DIR"
 
+
 create_directories() {
   mkdir -p data/global
   mkdir -p checkpoints/global
-  mkdir -p data/client1
-  mkdir -p data/client2
-  mkdir -p checkpoints/client1
-  mkdir -p checkpoints/client2
+
+  if [ ! -f clients.yml ]; then
+    echo "Warning: clients.yml not found."
+    echo "Create clients.yml before running the federated learning stack."
+    return
+  fi
+
+  python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+config_path = Path("clients.yml")
+
+with config_path.open("r", encoding="utf-8") as handle:
+    config = yaml.safe_load(handle) or {}
+
+clients = config.get("clients", [])
+
+if len(clients) < 2:
+    raise SystemExit(
+        "ERROR: clients.yml must define at least 2 clients."
+    )
+
+for client in clients:
+    client_id = str(client.get("id", "")).strip()
+    data_dir = str(client.get("data_dir", "")).strip()
+    checkpoint_dir = str(client.get("checkpoint_dir", "")).strip()
+
+    if not client_id:
+        raise SystemExit(
+            "ERROR: Every client must define an 'id'."
+        )
+
+    if not data_dir:
+        raise SystemExit(
+            f"ERROR: Client '{client_id}' is missing 'data_dir'."
+        )
+
+    if not checkpoint_dir:
+        raise SystemExit(
+            f"ERROR: Client '{client_id}' is missing "
+            "'checkpoint_dir'."
+        )
+
+    Path(data_dir).mkdir(parents=True, exist_ok=True)
+    Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"Prepared {client_id}: "
+        f"data={data_dir}, "
+        f"checkpoints={checkpoint_dir}"
+    )
+PY
 }
+
 
 create_env_file() {
   if [ ! -f .env ]; then
@@ -19,70 +70,246 @@ create_env_file() {
       cp .env.example .env
       echo "Created .env from .env.example"
     else
-      echo "Warning: .env.example not found. Create .env manually if needed."
+      echo "Warning: .env.example not found."
+      echo "Create .env manually if needed."
     fi
   fi
 }
 
-warn_missing_csvs() {
-  if [ ! -f data/client1/train.csv ] || [ ! -f data/client1/val.csv ] || [ ! -f data/client2/train.csv ] || [ ! -f data/client2/val.csv ]; then
-    cat <<'EOF'
-WARNING: Example data directories were created, but some CSV files are missing.
-The clients will use synthetic mock data instead of real data until CSVs are provided.
-To run with real data later, add the following files:
-  data/client1/train.csv
-  data/client1/val.csv
-  data/client2/train.csv
-  data/client2/val.csv
-Each CSV should include a `label` column and either:
-  - `img_path` relative to the CSV file directory, or
-  - numeric features columns only.
-EOF
+
+generate_compose_file() {
+  if [ ! -f clients.yml ]; then
+    echo "ERROR: clients.yml not found."
+    return 1
   fi
+
+  if [ ! -f generate_compose.py ]; then
+    echo "ERROR: generate_compose.py not found."
+    return 1
+  fi
+
+  echo "Generating Docker Compose configuration..."
+
+  python3 generate_compose.py \
+    --config clients.yml \
+    --output docker-compose.generated.yml
+
+  if [ ! -f docker-compose.generated.yml ]; then
+    echo "ERROR: Docker Compose file was not generated."
+    return 1
+  fi
+
+  echo "Generated docker-compose.generated.yml"
 }
+
+
+warn_missing_csvs() {
+  if [ ! -f clients.yml ]; then
+    echo "WARNING: clients.yml not found; cannot check client CSV files."
+    return
+  fi
+
+  python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+config_path = Path("clients.yml")
+
+with config_path.open("r", encoding="utf-8") as handle:
+    config = yaml.safe_load(handle) or {}
+
+clients = config.get("clients", [])
+
+missing = []
+
+for client in clients:
+    client_id = str(client.get("id", "")).strip()
+    data_dir = Path(str(client.get("data_dir", "")).strip())
+
+    train_csv = data_dir / "train.csv"
+    val_csv = data_dir / "val.csv"
+
+    if not train_csv.is_file():
+        missing.append(str(train_csv))
+
+    if not val_csv.is_file():
+        missing.append(str(val_csv))
+
+if missing:
+    cat <<EOF
+WARNING: Some client CSV files are missing.
+
+The affected clients will use synthetic mock data until
+the required CSV files are provided.
+
+Missing files:
+EOF
+
+    for file in missing:
+        echo "  $file"
+
+    cat <<'EOF'
+
+Each client data directory should normally contain:
+  train.csv
+  val.csv
+
+The CSV files should conform to the DataContract defined by
+the federated learning application.
+EOF
+else
+    echo "All configured client train/validation CSV files are present."
+fi
+PY
+}
+
 
 setup() {
+  echo "=========================================="
+  echo "Federated Learning Environment Setup"
+  echo "=========================================="
+
   create_directories
   create_env_file
+  generate_compose_file
   warn_missing_csvs
+
+  echo
+  echo "Setup completed."
 }
 
+
 start_trainer() {
-  echo "Starting Docker Compose trainer and dependencies..."
-  if docker compose up --build trainer; then
-    echo "Trainer completed successfully. Shutting down the Compose stack..."
-    docker compose down
+  if [ ! -f docker-compose.generated.yml ]; then
+    echo "docker-compose.generated.yml not found."
+    echo "Generating it from clients.yml..."
+
+    generate_compose_file
+  fi
+
+  echo "=========================================="
+  echo "Building shared Flower SuperExec image"
+  echo "=========================================="
+
+  if ! docker build \
+      -f Dockerfile.superexec \
+      -t flwr_superexec:local \
+      .; then
+
+    echo "ERROR: Failed to build flwr_superexec:local."
+    return 1
+  fi
+
+  echo
+  echo "Shared SuperExec image built successfully."
+  echo
+
+  echo "=========================================="
+  echo "Starting Docker Compose trainer and dependencies"
+  echo "=========================================="
+
+  if docker compose \
+      -f docker-compose.generated.yml \
+      up trainer; then
+
+    echo
+    echo "Trainer completed successfully."
+    echo "Shutting down the Compose stack..."
+
+    docker compose \
+      -f docker-compose.generated.yml \
+      down
+
   else
-    echo "Trainer exited with an error. Leaving Compose stack running for inspection."
+
+    echo
+    echo "Trainer exited with an error."
+    echo "Leaving the Compose stack running for inspection."
+
     return 1
   fi
 }
 
+
+print_config() {
+  echo
+  echo "Configured clients:"
+
+  python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+config_path = Path("clients.yml")
+
+if not config_path.exists():
+    print("  clients.yml not found")
+    raise SystemExit(0)
+
+with config_path.open("r", encoding="utf-8") as handle:
+    config = yaml.safe_load(handle) or {}
+
+clients = config.get("clients", [])
+
+for client in clients:
+    client_id = str(client.get("id", "")).strip()
+    data_dir = str(client.get("data_dir", "")).strip()
+    checkpoint_dir = str(client.get("checkpoint_dir", "")).strip()
+
+    print(f"  {client_id}")
+    print(f"    data:        {data_dir}")
+    print(f"    checkpoints: {checkpoint_dir}")
+PY
+
+  echo
+}
+
+
 print_menu() {
   cat <<'EOF'
+
 Select an option:
-  1) Setup required directories and environment file only
-  2) Start the trainer service
-  3) Setup and then start the trainer
-  4) Exit
+  1) Setup required directories, compose configuration, and environment file.
+  2) Generate Compose configuration only
+  3) Start the trainer service
+  4) Setup and then start the trainer
+  5) Show configured clients
+  6) Exit
 EOF
 }
 
+
 print_menu
-read -rp "Enter choice [1-4]: " choice
+read -rp "Enter choice [1-6]: " choice
+
 case "$choice" in
   1)
     setup
     ;;
+
   2)
+    generate_compose_file
+    ;;
+
+  3)
     start_trainer
     ;;
-  3)
+
+  4)
     setup
     start_trainer
     ;;
-  *)
-    echo "No action selected. Exiting."
+
+  5)
+    print_config
+    ;;
+
+  6)
+    echo "Exiting."
     exit 0
+    ;;
+
+  *)
+    echo "Invalid choice. Exiting."
+    exit 1
     ;;
 esac
