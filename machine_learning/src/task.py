@@ -12,26 +12,32 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, Normalize, ToTensor
 
+from data_contract import CONTRACT
+
+# define a mapping from string representation of dtypes to PyTorch dtypes
+TORCH_DTYPES = {
+    "float32": torch.float32,
+    "float64": torch.float64,
+    "int32": torch.int32,
+    "int64": torch.int64,
+}
 
 TRAIN_DATA_FILE = os.environ.get("TRAIN_DATA_FILE", "train.csv")
 VAL_DATA_FILE = os.environ.get("VAL_DATA_FILE", "val.csv")
-SEGMENT_LENGTH = int(os.environ.get("SEGMENT_LENGTH", 5))
-OVERLAP_FRACTION = float(os.environ.get("OVERLAP_FRACTION", 0.5))
-NUM_SCALES = int(os.environ.get("NUM_SCALES", 32))
-LABEL_COLUMN = os.environ.get("LABEL_COLUMN", "Sensor_5")
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 30))
 
 class CustomNet(nn.Module):
     """CNN tuned for the StreamingDataset CWT feature tensors."""
 
-    def __init__(self, in_channels: int = 2, num_classes: int = 2):
-        super(CustomNet, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 6, kernel_size=5)
+    def __init__(self):
+        super().__init__()
+
+        self.conv1 = nn.Conv2d(CONTRACT.num_features, 6, kernel_size=5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, kernel_size=5)
         self.fc1 = nn.Linear(16 * 5 * 5, 120)
         self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, num_classes, )
+        self.fc3 = nn.Linear(84, CONTRACT.num_classes)
 
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
@@ -54,19 +60,13 @@ def load_client_data(data_dir: str):
 
     train_dataset = StreamingDataset(
         csv_path=str(train_csv),
-        segment_length=SEGMENT_LENGTH,
-        overlap_fraction=OVERLAP_FRACTION,
-        num_scales=NUM_SCALES,
-        label_column=LABEL_COLUMN
+        contract=CONTRACT,
     )
 
     val_dataset = StreamingDataset(
-            csv_path=str(val_csv),
-            segment_length=SEGMENT_LENGTH,
-            overlap_fraction=OVERLAP_FRACTION,
-            num_scales=NUM_SCALES,
-            label_column=LABEL_COLUMN
-        )
+        csv_path=str(val_csv),
+        contract=CONTRACT,
+    )
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
@@ -79,10 +79,7 @@ def load_server_data(data_dir: str):
     val_csv = Path(data_dir) / VAL_DATA_FILE
     val_dataset = StreamingDataset(
         csv_path=str(val_csv),
-        segment_length=SEGMENT_LENGTH,
-        overlap_fraction=OVERLAP_FRACTION,
-        num_scales=NUM_SCALES,
-        label_column=LABEL_COLUMN
+        contract=CONTRACT,
     )
 
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
@@ -133,8 +130,8 @@ def train_model(net, trainloader, epochs, lr, device):
                     X=current_batch["data"].numpy(),
                     y=current_batch["label_tensor"].numpy(),
                     signal=np.random.choice(list(signal_dict.keys())),  # Choose a random signal to visualize
-                    scales=np.arange(1, NUM_SCALES + 1),
-                    wavelet='morl',
+                    scales=CONTRACT.cwt_scales,
+                    wavelet=CONTRACT.wavelet,
                     filename_prefix=f"batch_{batch_index}",
                     signal_dict=signal_dict
                 )
@@ -189,8 +186,8 @@ def test_model(net, testloader, device):
                     X=current_batch["data"].numpy(),
                     y=current_batch["label_tensor"].numpy(),
                     signal=np.random.choice(list(signal_dict.keys())),  # Choose a random signal to visualize
-                    scales=np.arange(1, NUM_SCALES + 1),
-                    wavelet='morl',
+                    scales=CONTRACT.cwt_scales,
+                    wavelet=CONTRACT.wavelet,
                     filename_prefix=f"batch_{batch_index}",
                     signal_dict=signal_dict
                 )
@@ -207,131 +204,232 @@ def test_model(net, testloader, device):
 
 
 from torch.utils.data import DataLoader, IterableDataset
+
+
 class StreamingDataset(IterableDataset):
-    def __init__(self, csv_path: str, segment_length: int, overlap_fraction: float, num_scales: int, label_column: str):
+    def __init__(self, csv_path: str, contract=CONTRACT):
         """
-        Initialize the StreamingDataset with the buffer parameters.
-        Does not load the CSV into memory, but reads it in chunks during iteration.
+        Initialize the StreamingDataset from the shared DataContract.
+
+        The DataContract is the source of truth for:
+        - raw feature/label schema
+        - segmentation
+        - missing-value preprocessing
+        - CWT configuration
+        - model-facing tensor shape and dtype
         """
         self.csv_path = csv_path
-        self.segment_length = segment_length
-        self.overlap_fraction = overlap_fraction
-        self.num_scales = num_scales
-        self.label_column = label_column
+        self.contract = contract
         self.synthetic = False
 
         if not os.path.exists(csv_path):
             self.synthetic = True
             self.synthetic_size = BATCH_SIZE
-            self.num_synthetic_features = 4
-            self.num_synthetic_classes = 2
+            self.num_synthetic_features = contract.num_features
+            self.num_synthetic_classes = contract.num_classes
             self._generate_synthetic_data()
             return
 
-        # calculate how many rows to shift forward  for each segment based on the overlap fraction
-        # e.g. if segment_length=100 and overlap_fraction=0.5, then shift_length=50
-        self.step_size = int(self.segment_length * (1 - self.overlap_fraction))
-
-        # Guard against zero or negative step sizes (prevent infinite loops)
-        if self.step_size <= 0:
-            self.step_size = 1
+        self.step_size = contract.segmentation_step_size
 
     def _generate_synthetic_data(self):
-        self.synthetic_segments = np.random.rand(self.synthetic_size, self.segment_length, self.num_synthetic_features)
-        self.synthetic_arrays = np.random.rand(self.synthetic_size, self.num_synthetic_features, self.num_scales, self.num_scales).astype(np.float32)
-        self.synthetic_labels = np.random.randint(0, self.num_synthetic_classes, size=self.synthetic_size, dtype=np.int64)
-        self.synthetic_dict_idx_feature = {i: f"Sensor_{i+1}" for i in range(self.num_synthetic_features)}
+        self.synthetic_segments = np.random.rand(
+            self.synthetic_size,
+            self.contract.segment_length,
+            self.num_synthetic_features,
+        ).astype(self.contract.feature_dtype)
+
+        output_height, output_width = self.contract.output_size
+        self.synthetic_arrays = np.random.rand(
+            self.synthetic_size,
+            self.num_synthetic_features,
+            output_height,
+            output_width,
+        ).astype(self.contract.tensor_dtype)
+
+        self.synthetic_labels = np.random.randint(
+            0,
+            self.num_synthetic_classes,
+            size=self.synthetic_size,
+            dtype=np.int64,
+        )
+
+        self.synthetic_dict_idx_feature = {
+            i: name for i, name in enumerate(self.contract.feature_names)
+        }
+
+    def _validate_raw_schema(self, segment_chunk):
+        """Ensure the local CSV conforms to the contractual column schema."""
+        required_columns = set(self.contract.feature_names) | {
+            self.contract.label_column
+        }
+        missing_columns = required_columns - set(segment_chunk.columns)
+
+        if missing_columns:
+            raise ValueError(
+                f"CSV is missing required contract columns: "
+                f"{sorted(missing_columns)}"
+            )
 
     def create_feature_and_label(self, segment_chunk):
         """
-        Processes a pandas Dataframe chunk of length segment_length.
-        Handles missing values and returns a numpy array of shape (segment_length, num_features) and the corresponding label.
+        Process one contract-sized DataFrame segment.
+
+        Returns:
+            CWT feature matrix with shape (channels, height, width)
+            and the corresponding integer class label.
         """
-        # identify the columns that are not label columns
-        feature_columns = [c for c in segment_chunk.columns if c != self.label_column]
-        self.num_features = len(feature_columns)
-        # create dict of column indices to feature names for consistent ordering
-        self.dict_idx_feature = {i: col for i, col in enumerate(feature_columns)}
 
-        # forward fill, backward fill, and then fill remaining NaNs with 0 in the feature columns
-        segment_chunk[feature_columns] = segment_chunk[feature_columns].ffill().bfill().fillna(0)
+        # Explicitly select and order only the contract-defined features.
+        feature_columns = list(self.contract.feature_names)
+        segment_features = segment_chunk.loc[:, feature_columns].copy()
 
-        # create a single label by taking the mode of the label column in the segment
-        label = int(segment_chunk[self.label_column].mode().iloc[0])
+        # Contract-defined missing-value strategy:
+        # forward fill, backward fill, then replace any remaining NaNs with zero.
+        if self.contract.missing_value_strategy == "forward_fill_backward_fill_zero":
+            segment_features = (
+                segment_features.ffill().bfill().fillna(0)
+            )
+        else:
+            raise ValueError(
+                f"Unsupported missing-value strategy: "
+                f"{self.contract.missing_value_strategy}"
+            )
 
-        # convert the segment to a numpy array
-        segment_array = segment_chunk.to_numpy()
+        # Convert feature values to the contract-defined source dtype.
+        segment_features = segment_features.astype(self.contract.feature_dtype)
 
-        segment_cwt_matrix = self.create_cwt_matrix(segment_array, wavelet_name='morl', rescale_size=self.num_scales, log_scale=True)
+        # Create a single segment label using the mode of the contractual label column.
+        label = int(segment_chunk[self.contract.label_column].mode().iloc[0])
+
+        if label not in {int(key) for key in self.contract.label_info.keys()}:
+            raise ValueError(
+                f"Unknown label value {label}. "
+                f"Valid labels: {sorted(int(key) for key in self.contract.label_info.keys())}"
+            )
+
+        self.num_features = self.contract.num_features
+        self.dict_idx_feature = {
+            i: name for i, name in enumerate(feature_columns)
+        }
+
+        segment_array = segment_features.to_numpy(dtype=self.contract.feature_dtype)
+
+        segment_cwt_matrix = self.create_cwt_matrix(segment_array)
 
         return segment_cwt_matrix, label
 
-    def create_cwt_matrix(self, segment_array, wavelet_name='morl', rescale_size=128, log_scale=False):
+    def create_cwt_matrix(self, segment_array):
+        """Create the contract-defined CWT tensor for every feature channel."""
         import pywt
         from skimage.transform import resize
 
-        # range of scales for CWT
-        scales = np.arange(1, self.num_scales + 1)
+        if self.contract.transform_type != "cwt":
+            raise ValueError(
+                f"Unsupported transform type: {self.contract.transform_type}"
+            )
 
-        if log_scale:
-            scales = np.logspace(np.log(1), np.log(self.num_scales+1), num=self.num_scales, base=np.e, dtype=np.float32)
+        scales = self.contract.cwt_scales
+        output_height, output_width = self.contract.output_size
 
-        # preallocate matrix for CWT images
-        cwt_matrix = np.ndarray(shape=(self.num_features, rescale_size, rescale_size), dtype=np.float32)
+        cwt_matrix = np.empty(
+            shape=(
+                self.contract.num_features,
+                output_height,
+                output_width,
+            ),
+            dtype=self.contract.tensor_dtype,
+        )
 
-        for signal_idx,signal_name in self.dict_idx_feature.items():
+        for signal_idx, signal_name in self.dict_idx_feature.items():
             signal_data = segment_array[:, signal_idx]
-            coeffs, freqs = pywt.cwt(signal_data, scales, wavelet_name)
-            coeffs_resized = resize(coeffs, (rescale_size, rescale_size), mode='constant', anti_aliasing=True)
-            cwt_matrix[signal_idx,:, :] = coeffs_resized
+            coeffs, _ = pywt.cwt(
+                signal_data,
+                scales,
+                self.contract.wavelet,
+            )
+
+            coeffs_resized = resize(
+                coeffs,
+                (output_height, output_width),
+                mode="constant",
+                anti_aliasing=True,
+            )
+
+            cwt_matrix[signal_idx, :, :] = coeffs_resized.astype(
+                self.contract.tensor_dtype
+            )
 
         return cwt_matrix
 
-
     def __iter__(self):
         """
-        The core streaming logic: 
-        - reads the CSV in chunks, 
-        - processes each chunk into overlapping segments, and 
-        - yields processed tensors as feature-label pairs one at a time.
+        Stream local CSV data as overlapping, contract-compliant segments.
         """
         if self.synthetic:
             for i in range(self.synthetic_size):
                 yield {
-                    "data": self.synthetic_segments[i], 
-                    "dict_idx_feature": self.synthetic_dict_idx_feature, 
-                    "feature_tensor": torch.tensor(self.synthetic_arrays[i], dtype=torch.float32),
-                    "label_tensor": torch.tensor(self.synthetic_labels[i]).long()
+                    "data": self.synthetic_segments[i],
+                    "dict_idx_feature": self.synthetic_dict_idx_feature,
+                    "feature_tensor": torch.tensor(
+                        self.synthetic_arrays[i],
+                        dtype=TORCH_DTYPES[self.contract.tensor_dtype],
+                    ),
+                    "label_tensor": torch.tensor(
+                        self.synthetic_labels[i],
+                        dtype=TORCH_DTYPES[self.contract.label_dtype],
+                    ),
                 }
             return
-        
-        csv_stream = pd.read_csv(self.csv_path, chunksize=self.segment_length, index_col="timestamp")
-        for chunk in csv_stream:
-            # Append the newly read data to the sliding buffer
-            buffer = pd.concat([buffer, chunk], ignore_index=True) if 'buffer' in locals() else chunk
 
-            # While the buffer has enough data to create a segment, process it
-            while len(buffer) >= self.segment_length:
-                # Process the first segment_length rows sorted by column index to ensure consistent feature ordering
-                #TODO: use Data Contract here to ensure contract-driven and deterministic pre-processing
-                # e.g. buffer_segment = buffer.iloc[:self.segment_length, [contract.feature_names.index(c) for c in contract.feature_names]]
-                buffer_segment = buffer.iloc[:self.segment_length].sort_index(axis=1)
+        csv_stream = pd.read_csv(
+            self.csv_path,
+            chunksize=self.contract.segment_length,
+            index_col="timestamp",
+        )
+
+        buffer = pd.DataFrame()
+
+        for chunk in csv_stream:
+            self._validate_raw_schema(chunk)
+
+            # Keep only contract-defined feature and label columns.
+            chunk = chunk.loc[
+                :,
+                list(self.contract.feature_names)
+                + [self.contract.label_column],
+            ]
+
+            buffer = pd.concat([buffer, chunk], ignore_index=True)
+
+            while len(buffer) >= self.contract.segment_length:
+                buffer_segment = buffer.iloc[
+                    : self.contract.segment_length
+                ].copy()
+
                 feature, label = self.create_feature_and_label(buffer_segment)
 
-                # Convert to pytorch tensors with channels in the front
-                feature_tensor = torch.tensor(feature, dtype=torch.float32)
-                label_tensor = torch.tensor(label, dtype=torch.long)
+                feature_tensor = torch.tensor(
+                    feature,
+                    dtype=getattr(torch, self.contract.tensor_dtype),
+                )
+                label_tensor = torch.tensor(
+                    label,
+                    dtype=getattr(torch, self.contract.label_dtype),
+                )
 
-                # Yield the feature-label pair as a dictionary
                 yield {
-                    "data": buffer_segment[list(self.dict_idx_feature.values())].to_numpy(), 
-                    "dict_idx_feature": self.dict_idx_feature, 
-                    "feature_tensor": feature_tensor, 
-                    "label_tensor": label_tensor
+                    "data": buffer_segment[
+                        list(self.contract.feature_names)
+                    ].to_numpy(dtype=self.contract.feature_dtype),
+                    "dict_idx_feature": self.dict_idx_feature,
+                    "feature_tensor": feature_tensor,
+                    "label_tensor": label_tensor,
                 }
 
-                # Slide the buffer forward by step_size
-                buffer = buffer.iloc[self.step_size:].reset_index(drop=True)
+                buffer = buffer.iloc[
+                    self.step_size:
+                ].reset_index(drop=True)
 
 
 class Utilities:
@@ -474,26 +572,52 @@ class Utilities:
         history = xgb_model.fit(X_train, y_train, eval_set=eval_set, verbose=True)
         return xgb_model, history
 
+    def validate_model_compatibility(model: nn.Module, state_dict: dict) -> None:
+        """Validate that received Flower model weights match the contract-defined model."""
+
+        expected_state_dict = model.state_dict()
+
+        expected_keys = set(expected_state_dict.keys())
+        received_keys = set(state_dict.keys())
+
+        missing_keys = expected_keys - received_keys
+        unexpected_keys = received_keys - expected_keys
+
+        if missing_keys or unexpected_keys:
+            raise ValueError(
+                "Incompatible federated model state_dict. "
+                f"Missing keys: {sorted(missing_keys)}; "
+                f"Unexpected keys: {sorted(unexpected_keys)}"
+            )
+
+        shape_mismatches = []
+
+        for key in expected_state_dict:
+            expected_shape = tuple(expected_state_dict[key].shape)
+            received_shape = tuple(state_dict[key].shape)
+
+            if expected_shape != received_shape:
+                shape_mismatches.append(
+                    f"{key}: expected {expected_shape}, received {received_shape}"
+                )
+
+        if shape_mismatches:
+            raise ValueError(
+                "Incompatible federated model tensor shapes: "
+                + "; ".join(shape_mismatches)
+            )
+
 
 if __name__ == "__main__":
     # Example usage of StreamingDataset
-    CSV_FILE_PATH = os.path.join(os.getenv("DATA_DIR"), "train.csv")  # Path to your CSV file
-    SEGMENT_LENGTH = 5
-    OVERLAP_FRACTION = 0.5
-    NUM_SCALES = 32
-    LABEL_COLUMN = "Sensor_5"  # Adjust based on your CSV structure
-    BATCH_SIZE = 30
+    CSV_FILE_PATH = os.path.join(os.getenv("DATA_DIR"), TRAIN_DATA_FILE)
 
     dataset = StreamingDataset(
         csv_path=CSV_FILE_PATH,
-        segment_length=SEGMENT_LENGTH,
-        overlap_fraction=OVERLAP_FRACTION,
-        num_scales=NUM_SCALES,
-        label_column=LABEL_COLUMN
+        contract=CONTRACT,
     )
 
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE)
-    utilities = Utilities()
     batches = list(dataloader)
 
     for batch_index, batch in enumerate(batches):
@@ -501,20 +625,25 @@ if __name__ == "__main__":
         is_last_batch = batch_index == len(batches) - 1
 
         if is_first_batch or is_last_batch:
-            print(f"Batch {batch_index}: data shape {batch['data'].shape}, feature tensor shape {batch['feature_tensor'].shape}, label tensor shape {batch['label_tensor'].shape}")
-            utilities = Utilities()
-            signal_dict = {i: name[0] for i, name in batch["dict_idx_feature"].items()}
-            print(f"Feature names and internal index: {signal_dict}")
-            
-            utilities.plot_cwt_coeffs_per_label(
-                X=batch["data"].numpy(),
-                y=batch["label_tensor"].numpy(),
-                signal=np.random.choice(list(signal_dict.keys())),  # Choose a random signal to visualize
-                scales=np.arange(1, NUM_SCALES + 1),
-                wavelet='morl',
-                filename_prefix=f"batch_{batch_index}",
-                signal_dict=signal_dict
+            print(
+                f"Batch {batch_index}: data shape {batch['data'].shape}, "
+                f"feature tensor shape {batch['feature_tensor'].shape}, "
+                f"label tensor shape {batch['label_tensor'].shape}"
             )
 
+            signal_dict = {
+                i: name[0]
+                for i, name in batch["dict_idx_feature"].items()
+            }
+            print(f"Feature names and internal index: {signal_dict}")
 
-    
+            Utilities().plot_cwt_coeffs_per_label(
+                X=batch["data"].numpy(),
+                y=batch["label_tensor"].numpy(),
+                signal=np.random.choice(list(signal_dict.keys())),
+                scales=CONTRACT.cwt_scales,
+                wavelet=CONTRACT.wavelet,
+                filename_prefix=f"batch_{batch_index}",
+                signal_dict=signal_dict,
+            )
+

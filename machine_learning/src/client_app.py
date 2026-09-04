@@ -15,7 +15,7 @@ from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
 from src.data_contract import CONTRACT
-from src.task import CustomNet, load_client_data
+from src.task import CustomNet, Utilities, load_client_data
 from src.task import test_model
 from src.task import train_model
 
@@ -60,15 +60,13 @@ def train(msg: Message, context: Context):
     trainloader, _ = load_client_data(DATA_DIR)
 
     batch = next(iter(trainloader))
-    in_channels = batch["feature_tensor"].shape[1]
-    num_classes = 2
 
     try:
         # TODO: identify the available feature names in raw data (allow alias in the next step)
         feature_to_index = {name[0]:i for i, name in batch["dict_idx_feature"].items()}
         # TODO: identify the available label names in raw data (allow alias in the next step)
         label_to_index = {"NORMAL":0, "ALERT":1}
-        in_channels, num_classes = CONTRACT.validate(
+        _, _ = CONTRACT.validate(
             batch["data"].numpy(), 
             batch["label_tensor"].numpy(),
             feature_to_index,
@@ -85,8 +83,11 @@ def train(msg: Message, context: Context):
         )
 
     # Load the model and initialize it with the received weights
-    model = CustomNet(in_channels=in_channels, num_classes=num_classes)
-    model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
+    model = CustomNet()
+    state_dict = msg.content["arrays"].to_torch_state_dict()
+    Utilities().validate_model_compatibility(model, state_dict)
+
+    model.load_state_dict(state_dict)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -121,13 +122,12 @@ def evaluate(msg: Message, context: Context):
     # Load the client-local data
     _, valloader = load_client_data(DATA_DIR)
 
-    batch = next(iter(valloader))
-    in_channels = batch["feature_tensor"].shape[1]
-    num_classes = 2
-
     # Load the model and initialize it with the received weights
-    model = CustomNet(in_channels=in_channels, num_classes=num_classes)
-    model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
+    model = CustomNet()
+    state_dict = msg.content["arrays"].to_torch_state_dict()
+    Utilities().validate_model_compatibility(model, state_dict)
+
+    model.load_state_dict(state_dict)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 

@@ -9,7 +9,7 @@ from flwr.common import log, logger
 
 import json
 
-from src.task import CustomNet, load_server_data, test_model
+from src.task import CustomNet, Utilities, load_server_data, test_model
 from src.data_contract import CONTRACT
 
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
@@ -33,11 +33,8 @@ def main(grid: Grid, context: Context) -> None:
 
     # Infer the model shape from the actual data loader so the server model matches the training data.
     test_dataloader = load_server_data(DATA_DIR)
-    sample_batch = next(iter(test_dataloader))
-    in_channels = sample_batch["feature_tensor"].shape[1]
-    num_classes = 2
 
-    global_model = CustomNet(in_channels=in_channels, num_classes=num_classes)
+    global_model = CustomNet()
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg strategy
@@ -105,12 +102,12 @@ def global_evaluate(server_round: int, arrays: ArrayRecord) -> MetricRecord:
 
     # Load the model and initialize it with the received weights
     test_dataloader = load_server_data(DATA_DIR)
-    sample_batch = next(iter(test_dataloader))
-    in_channels = sample_batch["feature_tensor"].shape[1]
-    num_classes = 2
 
-    model = CustomNet(in_channels=in_channels, num_classes=num_classes)
-    model.load_state_dict(arrays.to_torch_state_dict())
+    model = CustomNet()
+    state_dict = arrays.to_torch_state_dict()
+    Utilities().validate_model_compatibility(model, state_dict)
+
+    model.load_state_dict(state_dict)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
