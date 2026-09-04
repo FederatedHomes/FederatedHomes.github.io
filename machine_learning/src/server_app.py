@@ -9,7 +9,7 @@ from flwr.common import log, logger
 
 import json
 
-from src.task import CustomNet, Utilities, load_server_data, test_model
+from src.task import CustomNet, load_server_data, test_model, validate_model_compatibility
 from src.data_contract import CONTRACT
 
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
@@ -105,7 +105,7 @@ def global_evaluate(server_round: int, arrays: ArrayRecord) -> MetricRecord:
 
     model = CustomNet()
     state_dict = arrays.to_torch_state_dict()
-    Utilities().validate_model_compatibility(model, state_dict)
+    validate_model_compatibility(model, state_dict)
 
     model.load_state_dict(state_dict)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

@@ -14,8 +14,7 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from src.data_contract import CONTRACT
-from src.task import CustomNet, Utilities, load_client_data
+from src.task import CustomNet, load_client_data, validate_model_compatibility
 from src.task import test_model
 from src.task import train_model
 
@@ -59,46 +58,32 @@ def train(msg: Message, context: Context):
     # Load the client-local data
     trainloader, _ = load_client_data(DATA_DIR)
 
-    batch = next(iter(trainloader))
-
-    try:
-        # TODO: identify the available feature names in raw data (allow alias in the next step)
-        feature_to_index = {name[0]:i for i, name in batch["dict_idx_feature"].items()}
-        # TODO: identify the available label names in raw data (allow alias in the next step)
-        label_to_index = {"NORMAL":0, "ALERT":1}
-        _, _ = CONTRACT.validate(
-            batch["data"].numpy(), 
-            batch["label_tensor"].numpy(),
-            feature_to_index,
-            label_to_index
-        )
-    except ValueError as e:
-        # Return zero examples → strategy will effectively exclude this client
-        print(f"[{context.node_config.get('partition-id','?')}] SCHEMA VIOLATION: {e}")
-        empty_arrays = ArrayRecord(msg.content["arrays"].to_numpy_ndarrays())  # echo back unchanged
-        metrics = MetricRecord({"num-examples": 0, "schema_violation": str(e)})
-        return Message(
-            content=RecordDict({"arrays": empty_arrays, "metrics": metrics}),
-            reply_to=msg,
-        )
-
     # Load the model and initialize it with the received weights
     model = CustomNet()
     state_dict = msg.content["arrays"].to_torch_state_dict()
-    Utilities().validate_model_compatibility(model, state_dict)
+    validate_model_compatibility(model, state_dict)
 
     model.load_state_dict(state_dict)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     # Call the training function
-    train_loss, total_examples = train_model(
-        model,
-        trainloader,
-        context.run_config["local-epochs"],
-        msg.content["config"]["lr"],
-        device,
-    )
+    try:
+        train_loss, total_examples = train_model(
+            model,
+            trainloader,
+            context.run_config["local-epochs"],
+            msg.content["config"]["lr"],
+            device,
+        )
+    except ValueError as e:
+        print(f"[{context.node_config.get('partition-id','?')}] SCHEMA VIOLATION: {e}")
+        empty_arrays = ArrayRecord(msg.content["arrays"].to_numpy_ndarrays())
+        metrics = MetricRecord({"num-examples": 0, "schema_violation": str(e)})
+        return Message(
+            content=RecordDict({"arrays": empty_arrays, "metrics": metrics}),
+            reply_to=msg,
+        )
 
     save_client_checkpoint(model)
 
@@ -125,18 +110,26 @@ def evaluate(msg: Message, context: Context):
     # Load the model and initialize it with the received weights
     model = CustomNet()
     state_dict = msg.content["arrays"].to_torch_state_dict()
-    Utilities().validate_model_compatibility(model, state_dict)
+    validate_model_compatibility(model, state_dict)
 
     model.load_state_dict(state_dict)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     # Call the evaluation function
-    eval_loss, eval_acc, total_examples = test_model(
-        model,
-        valloader,
-        device,
-    )
+    try:
+        eval_loss, eval_acc, total_examples = test_model(
+            model,
+            valloader,
+            device,
+        )
+    except ValueError as e:
+        print(f"[{context.node_config.get('partition-id','?')}] SCHEMA VIOLATION: {e}")
+        metrics = MetricRecord({"num-examples": 0, "schema_violation": str(e)})
+        return Message(
+            content=RecordDict({"metrics": metrics}),
+            reply_to=msg,
+        )
 
     # Construct and return reply Message
     metrics = {

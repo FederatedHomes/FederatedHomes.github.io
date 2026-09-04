@@ -271,6 +271,51 @@ class StreamingDataset(IterableDataset):
                 f"{sorted(missing_columns)}"
             )
 
+    def validate_segment(self, segment_chunk):
+        """Validate a contract-sized segment before feature transformation."""
+
+        if len(segment_chunk) != self.contract.segment_length:
+            raise ValueError(
+                f"Invalid segment length: expected "
+                f"{self.contract.segment_length}, got {len(segment_chunk)}"
+            )
+
+        label_series = pd.to_numeric(
+            segment_chunk[self.contract.label_column],
+            errors="coerce",
+        )
+
+        if label_series.isna().any():
+            raise ValueError(
+                f"Non-numeric or missing values found in label column "
+                f"'{self.contract.label_column}'"
+            )
+
+        if not np.equal(
+            label_series.to_numpy(),
+            label_series.astype(np.int64).to_numpy(),
+        ).all():
+            raise ValueError(
+                f"Non-integer values found in label column "
+                f"'{self.contract.label_column}'"
+            )
+
+        valid_labels = {
+            int(key) for key in self.contract.label_info.keys()
+        }
+
+        observed_labels = set(
+            label_series.astype(np.int64).tolist()
+        )
+
+        bad_labels = observed_labels - valid_labels
+
+        if bad_labels:
+            raise ValueError(
+                f"Unknown label values: {sorted(bad_labels)}. "
+                f"Valid labels: {sorted(valid_labels)}"
+            )
+
     def create_feature_and_label(self, segment_chunk):
         """
         Process one contract-sized DataFrame segment.
@@ -279,6 +324,8 @@ class StreamingDataset(IterableDataset):
             CWT feature matrix with shape (channels, height, width)
             and the corresponding integer class label.
         """
+
+        self.validate_segment(segment_chunk)
 
         # Explicitly select and order only the contract-defined features.
         feature_columns = list(self.contract.feature_names)
@@ -301,12 +348,6 @@ class StreamingDataset(IterableDataset):
 
         # Create a single segment label using the mode of the contractual label column.
         label = int(segment_chunk[self.contract.label_column].mode().iloc[0])
-
-        if label not in {int(key) for key in self.contract.label_info.keys()}:
-            raise ValueError(
-                f"Unknown label value {label}. "
-                f"Valid labels: {sorted(int(key) for key in self.contract.label_info.keys())}"
-            )
 
         self.num_features = self.contract.num_features
         self.dict_idx_feature = {
@@ -411,11 +452,11 @@ class StreamingDataset(IterableDataset):
 
                 feature_tensor = torch.tensor(
                     feature,
-                    dtype=getattr(torch, self.contract.tensor_dtype),
+                    dtype=TORCH_DTYPES[self.contract.tensor_dtype],
                 )
                 label_tensor = torch.tensor(
                     label,
-                    dtype=getattr(torch, self.contract.label_dtype),
+                    dtype=TORCH_DTYPES[self.contract.label_dtype],
                 )
 
                 yield {
@@ -572,41 +613,40 @@ class Utilities:
         history = xgb_model.fit(X_train, y_train, eval_set=eval_set, verbose=True)
         return xgb_model, history
 
-    @staticmethod
-    def validate_model_compatibility(model: nn.Module, state_dict: dict) -> None:
-        """Validate that received Flower model weights match the contract-defined model."""
+def validate_model_compatibility(model: nn.Module, state_dict: dict) -> None:
+    """Validate that received Flower model weights match the contract-defined model."""
 
-        expected_state_dict = model.state_dict()
+    expected_state_dict = model.state_dict()
 
-        expected_keys = set(expected_state_dict.keys())
-        received_keys = set(state_dict.keys())
+    expected_keys = set(expected_state_dict.keys())
+    received_keys = set(state_dict.keys())
 
-        missing_keys = expected_keys - received_keys
-        unexpected_keys = received_keys - expected_keys
+    missing_keys = expected_keys - received_keys
+    unexpected_keys = received_keys - expected_keys
 
-        if missing_keys or unexpected_keys:
-            raise ValueError(
-                "Incompatible federated model state_dict. "
-                f"Missing keys: {sorted(missing_keys)}; "
-                f"Unexpected keys: {sorted(unexpected_keys)}"
+    if missing_keys or unexpected_keys:
+        raise ValueError(
+            "Incompatible federated model state_dict. "
+            f"Missing keys: {sorted(missing_keys)}; "
+            f"Unexpected keys: {sorted(unexpected_keys)}"
+        )
+
+    shape_mismatches = []
+
+    for key in expected_state_dict:
+        expected_shape = tuple(expected_state_dict[key].shape)
+        received_shape = tuple(state_dict[key].shape)
+
+        if expected_shape != received_shape:
+            shape_mismatches.append(
+                f"{key}: expected {expected_shape}, received {received_shape}"
             )
 
-        shape_mismatches = []
-
-        for key in expected_state_dict:
-            expected_shape = tuple(expected_state_dict[key].shape)
-            received_shape = tuple(state_dict[key].shape)
-
-            if expected_shape != received_shape:
-                shape_mismatches.append(
-                    f"{key}: expected {expected_shape}, received {received_shape}"
-                )
-
-        if shape_mismatches:
-            raise ValueError(
-                "Incompatible federated model tensor shapes: "
-                + "; ".join(shape_mismatches)
-            )
+    if shape_mismatches:
+        raise ValueError(
+            "Incompatible federated model tensor shapes: "
+            + "; ".join(shape_mismatches)
+        )
 
 
 if __name__ == "__main__":
