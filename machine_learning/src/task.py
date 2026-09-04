@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, Normalize, ToTensor
 
-from data_contract import CONTRACT
+from src.data_contract import CONTRACT
 
 # define a mapping from string representation of dtypes to PyTorch dtypes
 TORCH_DTYPES = {
@@ -572,6 +572,7 @@ class Utilities:
         history = xgb_model.fit(X_train, y_train, eval_set=eval_set, verbose=True)
         return xgb_model, history
 
+    @staticmethod
     def validate_model_compatibility(model: nn.Module, state_dict: dict) -> None:
         """Validate that received Flower model weights match the contract-defined model."""
 
