@@ -23,6 +23,7 @@ def production_env(tmp_path: Path) -> dict[str, str]:
         "TLS_ROOT_CERTIFICATES": str(root),
         "SUPERLINK_CERTIFICATE": str(cert),
         "SUPERLINK_PRIVATE_KEY": str(key),
+        "TLS_CERTIFICATE_HOST_DIR": str(tmp_path),
         "SUPERNODE_AUTH_PRIVATE_KEY_DIR": str(auth_dir),
         "SUPERNODE_AUTH_HOST_DIR": str(auth_host_dir),
     }
@@ -64,6 +65,7 @@ def test_production_configuration_loads(tmp_path: Path) -> None:
     assert config.tls_root_certificates == tmp_path / "ca.crt"
     assert config.superlink_certificate == tmp_path / "superlink.crt"
     assert config.superlink_private_key == tmp_path / "superlink.key"
+    assert config.tls_certificate_host_dir == tmp_path
     assert config.supernode_auth_private_key_dir == tmp_path / "auth"
     assert config.supernode_auth_host_dir == tmp_path / "auth-host"
     assert config.is_production
