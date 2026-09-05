@@ -76,12 +76,7 @@ class DeploymentConfig:
         return ["--root-certificates", str(self.tls_root_certificates)]
 
     def supernode_auth_args(self, client_id: str) -> list[str]:
-        """Return authentication arguments for a specific SuperNode.
-
-        The authentication directory contains one private key per client. The
-        key filename is the configured client ID, matching Flower's
-        ``--auth-supernode-private-key`` file argument.
-        """
+        """Return authentication arguments for a specific SuperNode."""
 
         if not self.supernode_auth_enabled:
             return []
@@ -189,11 +184,24 @@ def load_deployment_config(
     }
 
     if require_files:
-        missing_files = [
-            f"{name}={path}"
-            for name, path in paths.items()
-            if (path.is_dir() is False if name == "supernode_auth_private_key_dir" else path.is_file())
-        ]
+        missing_files = []
+        if not paths["tls_root_certificates"].is_file():
+            missing_files.append(
+                f"tls_root_certificates={paths['tls_root_certificates']}"
+            )
+        if not paths["superlink_certificate"].is_file():
+            missing_files.append(
+                f"superlink_certificate={paths['superlink_certificate']}"
+            )
+        if not paths["superlink_private_key"].is_file():
+            missing_files.append(
+                f"superlink_private_key={paths['superlink_private_key']}"
+            )
+        if not paths["supernode_auth_private_key_dir"].is_dir():
+            missing_files.append(
+                "supernode_auth_private_key_dir="
+                f"{paths['supernode_auth_private_key_dir']}"
+            )
         if missing_files:
             raise DeploymentConfigError(
                 "Production security files/directories were not found: "
