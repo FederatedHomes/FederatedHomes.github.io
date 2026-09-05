@@ -36,12 +36,52 @@ class DeploymentConfig:
 
         return self.profile is DeploymentProfile.PRODUCTION
 
+    def superlink_tls_args(self) -> list[str]:
+        """Return SuperLink TLS arguments for a production launch."""
+
+        if not self.is_production:
+            return []
+        assert self.tls_root_certificates is not None
+        assert self.superlink_certificate is not None
+        assert self.superlink_private_key is not None
+        return [
+            "--ssl-ca-certfile",
+            str(self.tls_root_certificates),
+            "--ssl-certfile",
+            str(self.superlink_certificate),
+            "--ssl-keyfile",
+            str(self.superlink_private_key),
+        ]
+
+    def supernode_tls_args(self) -> list[str]:
+        """Return SuperNode TLS arguments for a production launch."""
+
+        if not self.is_production:
+            return []
+        assert self.tls_root_certificates is not None
+        return ["--root-certificates", str(self.tls_root_certificates)]
+
+    def cli_tls_config(self) -> dict[str, str | bool]:
+        """Return the Flower CLI federation configuration for this profile."""
+
+        if self.is_production:
+            assert self.tls_root_certificates is not None
+            return {
+                "address": self.superlink_address,
+                "root-certificates": str(self.tls_root_certificates),
+            }
+        return {
+            "address": self.superlink_address,
+            "insecure": True,
+        }
+
 
 PROFILE_ENV = "DEPLOYMENT_PROFILE"
 SUPERLINK_ADDRESS_ENV = "SUPERLINK_ADDRESS"
 TLS_ROOT_CERTIFICATES_ENV = "TLS_ROOT_CERTIFICATES"
 SUPERLINK_CERTIFICATE_ENV = "SUPERLINK_CERTIFICATE"
 SUPERLINK_PRIVATE_KEY_ENV = "SUPERLINK_PRIVATE_KEY"
+TLS_CERTIFICATE_HOST_DIR_ENV = "TLS_CERTIFICATE_HOST_DIR"
 
 PRODUCTION_REQUIRED_ENV = (
     SUPERLINK_ADDRESS_ENV,
@@ -89,26 +129,16 @@ def load_deployment_config(
     *,
     require_files: bool = False,
 ) -> DeploymentConfig:
-    """Load and validate deployment configuration from environment variables.
-
-    Development mode is intentionally lightweight and remains compatible with
-    the current local Docker workflow. Production mode fails closed unless the
-    SuperLink address and TLS certificate/key paths are explicitly configured.
-    """
+    """Load and validate deployment configuration from environment variables."""
 
     env = os.environ if environ is None else environ
     profile = _profile_from_value(env.get(PROFILE_ENV))
-    superlink_address = env.get(SUPERLINK_ADDRESS_ENV, "").strip()
 
     if profile is DeploymentProfile.DEVELOPMENT:
         superlink_address = env.get(SUPERLINK_ADDRESS_ENV, "").strip()
         if not superlink_address:
             superlink_address = "superlink:9092"
-
-        return DeploymentConfig(
-            profile=profile,
-            superlink_address=superlink_address,
-        )
+        return DeploymentConfig(profile=profile, superlink_address=superlink_address)
 
     missing = [name for name in PRODUCTION_REQUIRED_ENV if not env.get(name, "").strip()]
     if missing:
@@ -136,7 +166,7 @@ def load_deployment_config(
 
     return DeploymentConfig(
         profile=profile,
-        superlink_address=superlink_address,
+        superlink_address=env[SUPERLINK_ADDRESS_ENV].strip(),
         **paths,
     )
 
