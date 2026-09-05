@@ -82,14 +82,14 @@ generate_compose_file() {
     return 1
   fi
 
-  if [ ! -f generate_compose.py ]; then
-    echo "ERROR: generate_compose.py not found."
+  if [ ! -f scripts/generate_compose.py ]; then
+    echo "ERROR: scripts/generate_compose.py not found."
     return 1
   fi
 
   echo "Generating Docker Compose configuration..."
 
-  python3 generate_compose.py \
+  python3 scripts/generate_compose.py \
     --config clients.yml \
     --output docker-compose.generated.yml \
     --profile "${DEPLOYMENT_PROFILE:-development}"

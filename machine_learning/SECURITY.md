@@ -37,7 +37,7 @@ TLS_ROOT_CERTIFICATES=/etc/flower/tls/ca.crt \
 SUPERLINK_CERTIFICATE=/etc/flower/tls/superlink.crt \
 SUPERLINK_PRIVATE_KEY=/etc/flower/tls/superlink.key \
 TLS_CERTIFICATE_HOST_DIR=/etc/federatedhomes/flower/tls \
-python generate_compose.py --profile production
+python scripts/generate_compose.py --profile production
 ```
 
 The production generator mounts the host certificate directory read-only and replaces the SuperLink/SuperNode `--insecure` flags with TLS arguments. The Flower CLI used by the trainer also selects the `production-deployment` profile, which supplies the CA certificate.

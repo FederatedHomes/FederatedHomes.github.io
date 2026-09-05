@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from generate_compose import build_compose
+from scripts.generate_compose import build_compose
 from src.deployment_config import DeploymentConfigError, DeploymentProfile
 
 
