@@ -60,7 +60,142 @@ The production validator requires:
 
 Private keys and other runtime credentials belong outside Git. The repository ignores `.env`, certificate/key files, the local `certificates/` tree, and Flower runtime state under `machine_learning/.flwr/`.
 
-Each production service should receive only the credentials it needs. Per-SuperNode authentication keys will be introduced in Step 6.3.
+Each production service should receive only the credentials it needs.
+
+### SuperNode authentication
+
+Production SuperNode authentication is enabled with Flower's `--enable-supernode-auth` option on the SuperLink. Each authorized SuperNode has a unique ECDSA P-384 key pair in SSH/OpenSSH format. The public key is registered with the SuperLink; the corresponding private key remains with that SuperNode.
+
+The repository's development helper can generate local authentication identities:
+
+```bash
+python scripts/generate_supernode_auth.py \
+    --output-dir certificates/dev/auth \
+    client-1 client-2 client-3
+```
+
+This helper is for development and integration testing only. Production identities must be generated and managed through the organization's approved secret-management/PKI process.
+
+For production, the authentication paths are separated into host and container paths:
+
+```text
+Host:
+<auth-host-dir>/
+├── client-1
+├── client-2
+└── client-3
+
+Container:
+/etc/flower/auth/
+├── client-1
+├── client-2
+└── client-3
+```
+
+`SUPERNODE_AUTH_HOST_DIR` identifies the host directory containing the private keys. `SUPERNODE_AUTH_PRIVATE_KEY_DIR` identifies the container directory used by Flower. The Compose generator mounts each SuperNode's key individually and read-only; a SuperNode must never receive the private keys belonging to other clients.
+
+Production configuration requires:
+
+```text
+SUPERNODE_AUTH_PRIVATE_KEY_DIR=/etc/flower/auth
+SUPERNODE_AUTH_HOST_DIR=<host authentication directory>
+```
+
+These variables are required in addition to the TLS configuration. `setup.sh` validates that the configured authentication directory exists and that every client in `clients.yml` has its own authentication private key before production Compose generation.
+
+#### Register authorized SuperNodes
+
+Generating a key pair does not authorize a SuperNode. Register each public key with the configured SuperLink:
+
+```bash
+flwr supernode register \
+    certificates/prod/auth/client-1.pub \
+    production-deployment
+
+flwr supernode register \
+    certificates/prod/auth/client-2.pub \
+    production-deployment
+
+flwr supernode register \
+    certificates/prod/auth/client-3.pub \
+    production-deployment
+```
+
+Verify the registered identities with:
+
+```bash
+flwr supernode list production-deployment
+```
+
+Only public keys belonging to authorized SuperNodes should be registered. Record the Node ID returned during registration.
+
+Flower registration expects an OpenSSH ECDSA public key, such as:
+
+```text
+ecdsa-sha2-nistp384 AAAA...
+```
+
+Do not use a PEM public-key file beginning with `-----BEGIN PUBLIC KEY-----`.
+
+#### Validate authentication keys
+
+Private-key material must never be printed or committed. To validate a private key without displaying it:
+
+```bash
+ssh-keygen -y -f certificates/prod/auth/client-1 > /dev/null
+```
+
+Repeat for every configured SuperNode.
+
+To compare public-key fingerprints:
+
+```bash
+for client in client-1 client-2 client-3; do
+    echo "$client:"
+    ssh-keygen -lf "certificates/prod/auth/$client.pub"
+done
+```
+
+Each configured client must have a unique fingerprint.
+
+#### Production authentication flow
+
+The expected production flow is:
+
+```text
+SuperNode private key
+        |
+        v
+SuperNode establishes TLS to SuperLink
+        |
+        v
+SuperNode authentication
+        |
+   +----+----+
+   |         |
+accepted   rejected
+   |         |
+   v         v
+federated   no access
+training
+```
+
+TLS protects the transport and verifies the SuperLink using the configured CA. SuperNode authentication separately determines whether the connecting SuperNode identity is authorized.
+
+An authorized SuperNode must connect successfully, while an unregistered SuperNode using a different key must be rejected.
+
+#### Key rotation and revocation
+
+If a SuperNode authentication private key is compromised:
+
+1. Stop the affected SuperNode.
+2. Unregister/revoke its old public-key identity from the SuperLink.
+3. Generate a new unique key pair through the approved credential-management process.
+4. Distribute only the new private key to the affected SuperNode.
+5. Register the new public key.
+6. Verify the new identity before resuming training.
+
+Do not replace a registered key without considering the impact on the existing Node ID and authorization state.
 
 ## Scope boundary
 
