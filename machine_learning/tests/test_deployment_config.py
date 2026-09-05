@@ -13,11 +13,13 @@ from src.deployment_config import (
 
 
 def production_env(tmp_path: Path) -> dict[str, str]:
-    """Return a complete production configuration using temporary TLS files."""
+    """Return a complete production configuration using temporary security material."""
 
     root = tmp_path / "ca.crt"
     cert = tmp_path / "superlink.crt"
     key = tmp_path / "superlink.key"
+    auth_dir = tmp_path / "auth"
+    auth_dir.mkdir()
 
     for path in (root, cert, key):
         path.write_text("test", encoding="utf-8")
@@ -28,6 +30,7 @@ def production_env(tmp_path: Path) -> dict[str, str]:
         "TLS_ROOT_CERTIFICATES": str(root),
         "SUPERLINK_CERTIFICATE": str(cert),
         "SUPERLINK_PRIVATE_KEY": str(key),
+        "SUPERNODE_AUTH_PRIVATE_KEY_DIR": str(auth_dir),
     }
 
 
@@ -37,6 +40,7 @@ def test_development_profile_is_default() -> None:
     assert config.profile is DeploymentProfile.DEVELOPMENT
     assert config.superlink_address == "superlink:9092"
     assert not config.is_production
+    assert not config.supernode_auth_enabled
 
 
 def test_development_profile_accepts_current_insecure_transport() -> None:
@@ -56,12 +60,12 @@ def test_production_requires_explicit_environment_variables() -> None:
         load_deployment_config({"DEPLOYMENT_PROFILE": "production"})
 
 
-def test_production_requires_tls_files_when_requested(tmp_path: Path) -> None:
+def test_production_requires_tls_and_auth_directory_when_requested(tmp_path: Path) -> None:
     env = production_env(tmp_path)
     missing = tmp_path / "missing.key"
     env["SUPERLINK_PRIVATE_KEY"] = str(missing)
 
-    with pytest.raises(DeploymentConfigError, match="TLS files"):
+    with pytest.raises(DeploymentConfigError, match="security files/directories"):
         load_deployment_config(env, require_files=True)
 
 
@@ -73,7 +77,9 @@ def test_production_configuration_loads(tmp_path: Path) -> None:
     assert config.tls_root_certificates is not None
     assert config.superlink_certificate is not None
     assert config.superlink_private_key is not None
+    assert config.supernode_auth_private_key_dir == tmp_path / "auth"
     assert config.is_production
+    assert config.supernode_auth_enabled
 
 
 def test_production_rejects_insecure_flag() -> None:
@@ -101,6 +107,34 @@ def test_production_generates_superlink_tls_args(tmp_path: Path) -> None:
     ]
 
 
+def test_production_enables_supernode_authentication() -> None:
+    assert load_deployment_config({
+        "DEPLOYMENT_PROFILE": "development",
+    }).superlink_auth_args() == []
+
+
+def test_production_generates_superlink_auth_args(tmp_path: Path) -> None:
+    config = load_deployment_config(production_env(tmp_path))
+
+    assert config.superlink_auth_args() == ["--enable-supernode-auth"]
+
+
+def test_production_generates_per_client_supernode_auth_args(tmp_path: Path) -> None:
+    config = load_deployment_config(production_env(tmp_path))
+
+    assert config.supernode_auth_args("client-1") == [
+        "--auth-supernode-private-key",
+        str(tmp_path / "auth" / "client-1"),
+    ]
+
+
+def test_supernode_auth_requires_client_id(tmp_path: Path) -> None:
+    config = load_deployment_config(production_env(tmp_path))
+
+    with pytest.raises(DeploymentConfigError, match="client ID"):
+        config.supernode_auth_args(" ")
+
+
 def test_production_generates_supernode_tls_args(tmp_path: Path) -> None:
     config = load_deployment_config(production_env(tmp_path))
 
@@ -109,11 +143,13 @@ def test_production_generates_supernode_tls_args(tmp_path: Path) -> None:
     ]
 
 
-def test_development_generates_no_tls_args() -> None:
+def test_development_generates_no_tls_or_auth_args() -> None:
     config = load_deployment_config({})
 
     assert config.superlink_tls_args() == []
+    assert config.superlink_auth_args() == []
     assert config.supernode_tls_args() == []
+    assert config.supernode_auth_args("client-1") == []
     assert config.cli_tls_config() == {
         "address": "superlink:9092",
         "insecure": True,
