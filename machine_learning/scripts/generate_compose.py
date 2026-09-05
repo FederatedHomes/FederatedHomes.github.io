@@ -7,7 +7,6 @@ import argparse
 import os
 from pathlib import Path
 import sys
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -19,7 +18,7 @@ SUPERNODE_PORT = 9094
 SUPERNODE_IMAGE = "flwr/supernode:1.33.0"
 SUPEREXEC_IMAGE = "flwr_superexec:local"
 TLS_CONTAINER_DIR = "/etc/flower/tls"
-SUPERNODE_AUTH_CONTAINER_DIR = "/etc/flower/auth"
+AUTH_CONTAINER_DIR = "/etc/flower/auth"
 
 
 def validate_clients(clients: list[dict]) -> None:
@@ -59,8 +58,8 @@ def build_compose(clients: list[dict], *, profile: DeploymentProfile | str = Dep
             "SUPERLINK_ADDRESS": os.environ.get("SUPERLINK_ADDRESS", "superlink:9092"),
         })
 
-    superlink_command = []
-    supernode_prefix = []
+    superlink_command: list[str] = []
+    supernode_prefix: list[str] = []
     if config.is_production:
         superlink_command.extend(config.superlink_tls_args())
         superlink_command.extend(config.superlink_auth_args())
@@ -73,7 +72,7 @@ def build_compose(clients: list[dict], *, profile: DeploymentProfile | str = Dep
     validate_no_insecure_flag(config.profile, supernode_prefix)
 
     host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod")
-    superlink_tls_mount = f"{host_tls_dir}:{TLS_CONTAINER_DIR}:ro" if config.is_production else None
+    host_auth_dir = os.environ.get("SUPERNODE_AUTH_HOST_DIR", "./certificates/prod/auth")
 
     superlink_service = {
         "image": "flwr/superlink:1.33.0",
@@ -82,12 +81,16 @@ def build_compose(clients: list[dict], *, profile: DeploymentProfile | str = Dep
         "ports": ["9091:9091", "9092:9092", "9093:9093"],
         "networks": ["flwr-network"],
     }
-    if superlink_tls_mount:
-        superlink_service["volumes"] = [superlink_tls_mount]
+    if config.is_production:
+        superlink_service["volumes"] = [
+            f"{host_tls_dir}/ca.crt:{TLS_CONTAINER_DIR}/ca.crt:ro",
+            f"{host_tls_dir}/superlink.crt:{TLS_CONTAINER_DIR}/superlink.crt:ro",
+            f"{host_tls_dir}/superlink.key:{TLS_CONTAINER_DIR}/superlink.key:ro",
+        ]
 
     services = {"superlink": superlink_service}
-    node_services = []
-    app_services = []
+    node_services: list[str] = []
+    app_services: list[str] = []
 
     for client in clients:
         client_id = str(client["id"]).strip()
@@ -102,14 +105,8 @@ def build_compose(clients: list[dict], *, profile: DeploymentProfile | str = Dep
             "--clientappio-api-address", f"0.0.0.0:{SUPERNODE_PORT}",
             "--isolation", "process",
         ]
-        node_volumes = []
         if config.is_production:
             node_command.extend(config.supernode_auth_args(client_id))
-            # Do not mount the SuperLink private key into any SuperNode.
-            node_volumes.extend([
-                f"{host_tls_dir}/ca.crt:{TLS_CONTAINER_DIR}/ca.crt:ro",
-                f"{config.supernode_auth_host_key(client_id)}:{SUPERNODE_AUTH_CONTAINER_DIR}/{client_id}:ro",
-            ])
         validate_no_insecure_flag(config.profile, node_command)
 
         services[node] = {
@@ -118,8 +115,11 @@ def build_compose(clients: list[dict], *, profile: DeploymentProfile | str = Dep
             "networks": ["flwr-network"],
             "depends_on": ["superlink"],
         }
-        if node_volumes:
-            services[node]["volumes"] = node_volumes
+        if config.is_production:
+            services[node]["volumes"] = [
+                f"{host_tls_dir}/ca.crt:{TLS_CONTAINER_DIR}/ca.crt:ro",
+                f"{host_auth_dir}/{client_id}:{AUTH_CONTAINER_DIR}/{client_id}:ro",
+            ]
 
         services[app] = {
             "container_name": f"flwr_{app.replace('-', '_')}",
@@ -168,10 +168,8 @@ def build_compose(clients: list[dict], *, profile: DeploymentProfile | str = Dep
 def render_compose(compose: dict) -> str:
     lines = [
         "networks:", "  flwr-network:", "    driver: bridge", "",
-        "# Shared Flower SuperNode image", "x-flwr-supernode: &flwr_supernode",
-        f"  image: {SUPERNODE_IMAGE}", "",
-        "# Shared custom SuperExec image", "x-flwr-superexec: &flwr_superexec",
-        f"  image: {SUPEREXEC_IMAGE}", "", "services:",
+        "# Shared Flower SuperNode image", "x-flwr-supernode: &flwr_supernode", f"  image: {SUPERNODE_IMAGE}", "",
+        "# Shared custom SuperExec image", "x-flwr-superexec: &flwr_superexec", f"  image: {SUPEREXEC_IMAGE}", "", "services:",
     ]
     for name, service in compose["services"].items():
         lines.append(f"  {name}:")
