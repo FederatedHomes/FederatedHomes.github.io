@@ -100,15 +100,11 @@ def load_deployment_config(
     profile = _profile_from_value(env.get(PROFILE_ENV))
     superlink_address = env.get(SUPERLINK_ADDRESS_ENV, "").strip()
 
-    if not superlink_address:
-        if profile is DeploymentProfile.DEVELOPMENT:
-            superlink_address = "superlink:9092"
-        else:
-            raise DeploymentConfigError(
-                f"{SUPERLINK_ADDRESS_ENV} is required in production."
-            )
-
     if profile is DeploymentProfile.DEVELOPMENT:
+        superlink_address = env.get(SUPERLINK_ADDRESS_ENV, "").strip()
+        if not superlink_address:
+            superlink_address = "superlink:9092"
+
         return DeploymentConfig(
             profile=profile,
             superlink_address=superlink_address,
