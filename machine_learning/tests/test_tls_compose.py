@@ -18,9 +18,7 @@ def configure_production_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     ca = tmp_path / "ca.crt"
     cert = tmp_path / "superlink.crt"
     key = tmp_path / "superlink.key"
-    auth_dir = tmp_path / "auth"
     auth_host_dir = tmp_path / "auth-host"
-    auth_dir.mkdir()
     auth_host_dir.mkdir()
 
     for path in (ca, cert, key):
@@ -34,7 +32,9 @@ def configure_production_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.setenv("SUPERLINK_CERTIFICATE", "/etc/flower/tls/superlink.crt")
     monkeypatch.setenv("SUPERLINK_PRIVATE_KEY", "/etc/flower/tls/superlink.key")
     monkeypatch.setenv("TLS_CERTIFICATE_HOST_DIR", str(tmp_path))
-    monkeypatch.setenv("SUPERNODE_AUTH_PRIVATE_KEY_DIR", str(auth_dir))
+    # This is the path INSIDE the container. The host-side source is tested
+    # separately through SUPERNODE_AUTH_HOST_DIR below.
+    monkeypatch.setenv("SUPERNODE_AUTH_PRIVATE_KEY_DIR", "/etc/flower/auth")
     monkeypatch.setenv("SUPERNODE_AUTH_HOST_DIR", str(auth_host_dir))
 
 
