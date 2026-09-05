@@ -20,39 +20,26 @@ def validate_clients(clients: list[dict]) -> None:
     if len(clients) < 2:
         raise ValueError("At least 2 clients are required.")
 
-    ids = [
-        str(client.get("id", "")).strip()
-        for client in clients
-    ]
+    ids = [str(client.get("id", "")).strip() for client in clients]
 
     if any(not client_id for client_id in ids):
-        raise ValueError(
-            "Every client must define a non-empty 'id'."
-        )
+        raise ValueError("Every client must define a non-empty 'id'.")
 
     if len(ids) != len(set(ids)):
-        raise ValueError(
-            "Client IDs must be unique."
-        )
+        raise ValueError("Client IDs must be unique.")
 
     for client in clients:
         for key in ("data_dir", "checkpoint_dir"):
             if not str(client.get(key, "")).strip():
                 raise ValueError(
-                    f"Client '{client['id']}' "
-                    f"must define '{key}'."
+                    f"Client '{client['id']}' must define '{key}'."
                 )
 
 
 def safe_id(client_id: str) -> str:
     """Convert a client ID into a Docker Compose service-name fragment."""
 
-    return (
-        client_id.strip()
-        .lower()
-        .replace("_", "-")
-        .replace(" ", "-")
-    )
+    return client_id.strip().lower().replace("_", "-").replace(" ", "-")
 
 
 def node_name(client_id: str) -> str:
@@ -76,19 +63,9 @@ def build_compose(clients: list[dict]) -> dict:
         "superlink": {
             "image": "flwr/superlink:1.33.0",
             "container_name": "flwr_superlink",
-            "command": [
-                "--insecure",
-                "--isolation",
-                "process",
-            ],
-            "ports": [
-                "9091:9091",
-                "9092:9092",
-                "9093:9093",
-            ],
-            "networks": [
-                "flwr-network",
-            ],
+            "command": ["--insecure", "--isolation", "process"],
+            "ports": ["9091:9091", "9092:9092", "9093:9093"],
+            "networks": ["flwr-network"],
         }
     }
 
@@ -97,25 +74,13 @@ def build_compose(clients: list[dict]) -> dict:
 
     for client in clients:
         client_id = str(client["id"]).strip()
-
         node = node_name(client_id)
         app = app_name(client_id)
-
         node_services.append(node)
         app_services.append(app)
 
-        # ---------------------------------------------------------
-        # SuperNode
-        #
-        # IMPORTANT:
-        # No image/build is defined here.
-        # The shared image is applied through the YAML anchor
-        # in render_compose().
-        # ---------------------------------------------------------
         services[node] = {
-            "container_name": (
-                f"flwr_{node.replace('-', '_')}"
-            ),
+            "container_name": f"flwr_{node.replace('-', '_')}",
             "command": [
                 "--insecure",
                 "--superlink",
@@ -125,29 +90,13 @@ def build_compose(clients: list[dict]) -> dict:
                 "--isolation",
                 "process",
             ],
-            "networks": [
-                "flwr-network",
-            ],
-            "depends_on": [
-                "superlink",
-            ],
+            "networks": ["flwr-network"],
+            "depends_on": ["superlink"],
         }
 
-        # ---------------------------------------------------------
-        # ClientApp SuperExec
-        #
-        # IMPORTANT:
-        # No image/build is defined here.
-        # The shared image is applied through the YAML anchor
-        # in render_compose().
-        # ---------------------------------------------------------
         services[app] = {
-            "container_name": (
-                f"flwr_{app.replace('-', '_')}"
-            ),
-            "env_file": [
-                ".env",
-            ],
+            "container_name": f"flwr_{app.replace('-', '_')}",
+            "env_file": [".env"],
             "command": [
                 "--insecure",
                 "--plugin-type",
@@ -155,32 +104,18 @@ def build_compose(clients: list[dict]) -> dict:
                 "--appio-api-address",
                 f"{node}:{SUPERNODE_PORT}",
             ],
-            "networks": [
-                "flwr-network",
-            ],
+            "networks": ["flwr-network"],
             "volumes": [
                 f"{client['data_dir']}:${{DATA_DIR}}",
                 f"{client['checkpoint_dir']}:${{CHECKPOINT_DIR}}",
             ],
-            "environment": {
-                "CLIENT_ID": client_id,
-            },
-            "depends_on": [
-                node,
-                "superlink",
-            ],
+            "environment": {"CLIENT_ID": client_id},
+            "depends_on": [node, "superlink"],
         }
 
-    # -------------------------------------------------------------
-    # ServerApp SuperExec
-    #
-    # Uses the same shared custom SuperExec image.
-    # -------------------------------------------------------------
     services["superexec-serverapp"] = {
         "container_name": "flwr_superexec_serverapp",
-        "env_file": [
-            ".env",
-        ],
+        "env_file": [".env"],
         "command": [
             "--insecure",
             "--plugin-type",
@@ -188,94 +123,49 @@ def build_compose(clients: list[dict]) -> dict:
             "--appio-api-address",
             "superlink:9091",
         ],
-        "networks": [
-            "flwr-network",
-        ],
+        "networks": ["flwr-network"],
         "volumes": [
             "./checkpoints/global:${CHECKPOINT_DIR}",
             "./data/global:${DATA_DIR}",
         ],
-        "depends_on": [
-            "superlink",
-        ],
+        "depends_on": ["superlink"],
     }
 
-    # -------------------------------------------------------------
-    # Trainer
-    #
-    # The trainer only runs the Flower CLI and mounts the project.
-    # It does not need the custom SuperExec image.
-    # -------------------------------------------------------------
     services["trainer"] = {
         "image": "flwr/superexec:1.33.0",
         "container_name": "flwr_trainer",
-        "entrypoint": [
-            "flwr",
-        ],
-        "command": [
-            "run",
-            ".",
-            "local-deployment",
-            "--stream",
-        ],
+        "entrypoint": ["flwr"],
+        "command": ["run", ".", "local-deployment", "--stream"],
         "working_dir": "/app",
-        "volumes": [
-            ".:/app",
+        "volumes": [".:/app"],
+        "networks": ["flwr-network"],
+        "depends_on": [
+            "superlink",
+            "superexec-serverapp",
+            *node_services,
+            *app_services,
         ],
-        "networks": [
-            "flwr-network",
-        ],
-        "depends_on": (
-            [
-                "superlink",
-                "superexec-serverapp",
-            ]
-            + node_services
-            + app_services
-        ),
     }
 
     services["test-runner"] = {
         "container_name": "flwr_test_runner",
         "entrypoint": ["pytest"],
-        "command": [
-            "tests/",
-            "-v",
-        ],
+        "command": ["tests/", "-v"],
         "working_dir": "/app",
-        "volumes": [
-            ".:/app",
-        ],
+        "environment": {"PYTHONPATH": "/app"},
+        "volumes": [".:/app"],
         "networks": ["flwr-network"],
     }
 
     return {
-        "networks": {
-            "flwr-network": {
-                "driver": "bridge",
-            }
-        },
+        "networks": {"flwr-network": {"driver": "bridge"}},
         "services": services,
-        "volumes": {
-            "data": {},
-            "checkpoints": {},
-        },
+        "volumes": {"data": {}, "checkpoints": {}},
     }
 
 
 def render_compose(compose: dict) -> str:
-    """
-    Render Docker Compose with shared YAML anchors.
-
-    SuperNode image:
-        flwr/supernode:1.33.0
-
-    SuperExec image:
-        flwr_superexec:local
-
-    These images are defined once and inherited by all
-    corresponding services.
-    """
+    """Render Docker Compose with shared image YAML anchors."""
 
     lines = [
         "networks:",
@@ -294,33 +184,12 @@ def render_compose(compose: dict) -> str:
     ]
 
     for name, service in compose["services"].items():
-
         lines.append(f"  {name}:")
 
-        # ---------------------------------------------------------
-        # Apply shared SuperNode image.
-        # ---------------------------------------------------------
         if name.startswith("supernode-"):
-            lines.append(
-                "    <<: *flwr_supernode"
-            )
-
-        # ---------------------------------------------------------
-        # Apply shared SuperExec image.
-        #
-        # This includes:
-        #   - client SuperExec services
-        #   - server SuperExec service
-        #   - test-runner service
-        # ---------------------------------------------------------
+            lines.append("    <<: *flwr_supernode")
         elif name.startswith("superexec-") or name == "test-runner":
-            lines.append(
-                "    <<: *flwr_superexec"
-            )
-
-        # ---------------------------------------------------------
-        # SuperLink and trainer keep their explicit images.
-        # ---------------------------------------------------------
+            lines.append("    <<: *flwr_superexec")
 
         body = yaml.safe_dump(
             service,
@@ -329,22 +198,11 @@ def render_compose(compose: dict) -> str:
         ).rstrip()
 
         if body:
-            lines.extend(
-                f"    {line}"
-                for line in body.splitlines()
-            )
+            lines.extend(f"    {line}" for line in body.splitlines())
 
         lines.append("")
 
-    lines.extend(
-        [
-            "volumes:",
-            "  data: {}",
-            "  checkpoints: {}",
-            "",
-        ]
-    )
-
+    lines.extend(["volumes:", "  data: {}", "  checkpoints: {}", ""])
     return "\n".join(lines)
 
 
@@ -352,53 +210,30 @@ def main() -> None:
     """Load clients.yml and generate docker-compose.generated.yml."""
 
     parser = argparse.ArgumentParser(
-        description=(
-            "Generate an N-client Flower 1.33.0 "
-            "Docker Compose deployment."
-        )
+        description="Generate an N-client Flower 1.33.0 Docker Compose deployment."
     )
-
-    parser.add_argument(
-        "--config",
-        default="clients.yml",
-        help="Path to clients.yml",
-    )
-
+    parser.add_argument("--config", default="clients.yml", help="Path to clients.yml")
     parser.add_argument(
         "--output",
         default="docker-compose.generated.yml",
         help="Output Docker Compose file",
     )
-
     args = parser.parse_args()
 
     config_path = Path(args.config)
     output_path = Path(args.output)
 
     if not config_path.exists():
-        raise FileNotFoundError(
-            f"Client configuration not found: {config_path}"
-        )
+        raise FileNotFoundError(f"Client configuration not found: {config_path}")
 
-    with config_path.open(
-        "r",
-        encoding="utf-8",
-    ) as handle:
+    with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
 
     clients = config.get("clients", [])
-
     compose = build_compose(clients)
 
-    output_path.write_text(
-        render_compose(compose),
-        encoding="utf-8",
-    )
-
-    print(
-        f"Generated {output_path} "
-        f"for {len(clients)} clients."
-    )
+    output_path.write_text(render_compose(compose), encoding="utf-8")
+    print(f"Generated {output_path} for {len(clients)} clients.")
 
 
 if __name__ == "__main__":
