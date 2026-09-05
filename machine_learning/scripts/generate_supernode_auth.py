@@ -5,8 +5,8 @@ Production key material must be generated and managed by the deployment's
 approved PKI/secret-management process. This helper exists only to make local
 multi-node authentication testing reproducible.
 
-Flower CLI registration requires the public key in OpenSSH ECDSA format.
-The private key remains in PEM/EC format for the SuperNode runtime.
+Flower CLI registration and SuperNode authentication both use an SSH-format
+ECDSA key pair. P-384 is used to match the Flower authentication requirements.
 """
 
 from __future__ import annotations
@@ -22,12 +22,18 @@ from pathlib import Path
 _SAFE_CLIENT_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 
-def run_openssl(args: list[str]) -> None:
-    """Run OpenSSL and fail clearly when it is unavailable."""
+def run_ssh_keygen(args: list[str], *, capture_output: bool = False) -> str:
+    """Run ssh-keygen and fail clearly when it is unavailable."""
 
-    if shutil.which("openssl") is None:
-        raise RuntimeError("OpenSSL is required to generate SuperNode credentials.")
-    subprocess.run(["openssl", *args], check=True)
+    if shutil.which("ssh-keygen") is None:
+        raise RuntimeError("ssh-keygen is required to generate SuperNode credentials.")
+    result = subprocess.run(
+        ["ssh-keygen", *args],
+        check=True,
+        capture_output=capture_output,
+        text=True,
+    )
+    return result.stdout if capture_output else ""
 
 
 def validate_client_id(client_id: str) -> str:
@@ -45,7 +51,7 @@ def validate_client_id(client_id: str) -> str:
 
 
 def generate_supernode_keypair(output_dir: Path, client_id: str) -> tuple[Path, Path]:
-    """Generate one EC private key and OpenSSH public key for a SuperNode."""
+    """Generate one SSH-format ECDSA P-384 key pair for a SuperNode."""
 
     client_id = validate_client_id(client_id)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -58,27 +64,23 @@ def generate_supernode_keypair(output_dir: Path, client_id: str) -> tuple[Path, 
             "Remove the existing pair before regenerating it."
         )
 
-    run_openssl([
-        "ecparam",
-        "-name",
-        "secp384r1",
-        "-genkey",
-        "-noout",
-        "-out",
+    # Flower's SuperNode authentication expects an elliptic-curve private key
+    # in SSH format. `ssh-keygen` also emits the matching OpenSSH public key.
+    run_ssh_keygen([
+        "-t",
+        "ecdsa",
+        "-b",
+        "384",
+        "-N",
+        "",
+        "-f",
         str(private_key),
     ])
 
-    # Flower's `supernode register` expects an OpenSSH ECDSA public key,
-    # while the SuperNode runtime consumes the private EC key directly.
-    if shutil.which("ssh-keygen") is None:
-        raise RuntimeError("ssh-keygen is required to generate SuperNode credentials.")
-    result = subprocess.run(
-        ["ssh-keygen", "-y", "-f", str(private_key)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    public_key.write_text(result.stdout, encoding="utf-8")
+    generated_public_key = Path(f"{private_key}.pub")
+    if not generated_public_key.exists():
+        raise RuntimeError(f"ssh-keygen did not create the public key: {generated_public_key}")
+    generated_public_key.replace(public_key)
 
     # Private authentication keys should never be group/world readable.
     os.chmod(private_key, 0o600)
