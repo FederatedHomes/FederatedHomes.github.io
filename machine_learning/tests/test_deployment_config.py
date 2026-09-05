@@ -53,7 +53,7 @@ def test_production_requires_explicit_environment_variables() -> None:
 
 def test_production_requires_tls_and_auth_directories_when_requested(tmp_path: Path) -> None:
     env = production_env(tmp_path)
-    env["SUPERLINK_PRIVATE_KEY"] = str(tmp_path / "missing.key")
+    (tmp_path / "superlink.key").unlink()
     with pytest.raises(DeploymentConfigError, match="security files/directories"):
         load_deployment_config(env, require_files=True)
 
