@@ -30,6 +30,7 @@ class DeploymentConfig:
     tls_root_certificates: Path | None = None
     superlink_certificate: Path | None = None
     superlink_private_key: Path | None = None
+    tls_certificate_host_dir: Path | None = None
     supernode_auth_private_key_dir: Path | None = None
     supernode_auth_host_dir: Path | None = None
 
@@ -147,17 +148,24 @@ def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_
         "tls_root_certificates": Path(env[TLS_ROOT_CERTIFICATES_ENV]),
         "superlink_certificate": Path(env[SUPERLINK_CERTIFICATE_ENV]),
         "superlink_private_key": Path(env[SUPERLINK_PRIVATE_KEY_ENV]),
+        "tls_certificate_host_dir": Path(env[TLS_CERTIFICATE_HOST_DIR_ENV]),
         "supernode_auth_private_key_dir": Path(env[SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV]),
         "supernode_auth_host_dir": Path(env[SUPERNODE_AUTH_HOST_DIR_ENV]),
     }
     if require_files:
         missing_files = []
-        for name in ("tls_root_certificates", "superlink_certificate", "superlink_private_key"):
-            if not paths[name].is_file():
-                missing_files.append(f"{name}={paths[name]}")
-        for name in ("supernode_auth_private_key_dir", "supernode_auth_host_dir"):
-            if not paths[name].is_dir():
-                missing_files.append(f"{name}={paths[name]}")
+        host_tls_dir = paths["tls_certificate_host_dir"]
+        for name in ("ca.crt", "superlink.crt", "superlink.key"):
+            if not (host_tls_dir / name).is_file():
+                missing_files.append(f"tls_certificate_host_dir/{name}={host_tls_dir / name}")
+        auth_host_dir = paths["supernode_auth_host_dir"]
+        if not auth_host_dir.is_dir():
+            missing_files.append(f"supernode_auth_host_dir={auth_host_dir}")
+        auth_container_dir = paths["supernode_auth_private_key_dir"]
+        if not auth_container_dir.is_dir() and auth_container_dir != auth_host_dir:
+            # The container path normally does not exist on the deployment host.
+            # Its existence is established by the Docker mount generated later.
+            pass
         if missing_files:
             raise DeploymentConfigError("Production security files/directories were not found: " + ", ".join(missing_files))
 
