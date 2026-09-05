@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -80,12 +81,14 @@ class DeploymentConfig:
 
         if not self.supernode_auth_enabled:
             return []
-        if not client_id or not client_id.strip():
+        client_id = client_id.strip() if client_id else ""
+        if not client_id or not _SAFE_CLIENT_ID.fullmatch(client_id):
             raise DeploymentConfigError(
-                "A non-empty client ID is required for SuperNode authentication."
+                "SuperNode authentication requires a client ID containing only "
+                "letters, numbers, '.', '_' or '-'."
             )
         assert self.supernode_auth_private_key_dir is not None
-        key_path = self.supernode_auth_private_key_dir / client_id.strip()
+        key_path = self.supernode_auth_private_key_dir / client_id
         return ["--auth-supernode-private-key", str(key_path)]
 
     def cli_tls_config(self) -> dict[str, str | bool]:
@@ -118,6 +121,8 @@ PRODUCTION_REQUIRED_ENV = (
     SUPERLINK_PRIVATE_KEY_ENV,
     SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV,
 )
+
+_SAFE_CLIENT_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def _profile_from_value(value: str | None) -> DeploymentProfile:
