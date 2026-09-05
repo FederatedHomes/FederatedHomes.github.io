@@ -4,15 +4,22 @@
 Production key material must be generated and managed by the deployment's
 approved PKI/secret-management process. This helper exists only to make local
 multi-node authentication testing reproducible.
+
+Flower CLI registration requires the public key in OpenSSH ECDSA format.
+The private key remains in PEM/EC format for the SuperNode runtime.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
+
+
+_SAFE_CLIENT_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def run_openssl(args: list[str]) -> None:
@@ -23,24 +30,41 @@ def run_openssl(args: list[str]) -> None:
     subprocess.run(["openssl", *args], check=True)
 
 
+def run_command(args: list[str]) -> None:
+    """Run a required external command and fail clearly when unavailable."""
+
+    if shutil.which(args[0]) is None:
+        raise RuntimeError(f"{args[0]} is required to generate SuperNode credentials.")
+    subprocess.run(args, check=True)
+
+
 def validate_client_id(client_id: str) -> str:
     """Validate a client ID before using it as a filesystem component."""
 
     value = client_id.strip()
     if not value or value in {".", ".."}:
         raise ValueError("Client IDs must be non-empty and cannot be '.' or '..'.")
-    if Path(value).name != value:
-        raise ValueError(f"Unsafe client ID '{client_id}'.")
+    if not _SAFE_CLIENT_ID.fullmatch(value):
+        raise ValueError(
+            f"Unsafe client ID '{client_id}'. Client IDs may contain only "
+            "letters, numbers, '.', '_' or '-'."
+        )
     return value
 
 
 def generate_supernode_keypair(output_dir: Path, client_id: str) -> tuple[Path, Path]:
-    """Generate one EC private/public key pair for a SuperNode."""
+    """Generate one EC private key and OpenSSH public key for a SuperNode."""
 
     client_id = validate_client_id(client_id)
     output_dir.mkdir(parents=True, exist_ok=True)
     private_key = output_dir / client_id
     public_key = output_dir / f"{client_id}.pub"
+
+    if private_key.exists() or public_key.exists():
+        raise FileExistsError(
+            f"Authentication material already exists for '{client_id}'. "
+            "Remove the existing pair before regenerating it."
+        )
 
     run_openssl([
         "ecparam",
@@ -51,14 +75,22 @@ def generate_supernode_keypair(output_dir: Path, client_id: str) -> tuple[Path, 
         "-out",
         str(private_key),
     ])
-    run_openssl([
-        "ec",
-        "-in",
+
+    # Flower's `supernode register` expects an OpenSSH ECDSA public key,
+    # while the SuperNode runtime consumes the private EC key directly.
+    run_command([
+        "ssh-keygen",
+        "-y",
+        "-f",
         str(private_key),
-        "-pubout",
-        "-out",
-        str(public_key),
     ])
+    result = subprocess.run(
+        ["ssh-keygen", "-y", "-f", str(private_key)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    public_key.write_text(result.stdout, encoding="utf-8")
 
     # Private authentication keys should never be group/world readable.
     os.chmod(private_key, 0o600)
