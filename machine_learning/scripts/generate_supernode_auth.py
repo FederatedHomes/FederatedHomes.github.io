@@ -30,14 +30,6 @@ def run_openssl(args: list[str]) -> None:
     subprocess.run(["openssl", *args], check=True)
 
 
-def run_command(args: list[str]) -> None:
-    """Run a required external command and fail clearly when unavailable."""
-
-    if shutil.which(args[0]) is None:
-        raise RuntimeError(f"{args[0]} is required to generate SuperNode credentials.")
-    subprocess.run(args, check=True)
-
-
 def validate_client_id(client_id: str) -> str:
     """Validate a client ID before using it as a filesystem component."""
 
@@ -78,12 +70,8 @@ def generate_supernode_keypair(output_dir: Path, client_id: str) -> tuple[Path, 
 
     # Flower's `supernode register` expects an OpenSSH ECDSA public key,
     # while the SuperNode runtime consumes the private EC key directly.
-    run_command([
-        "ssh-keygen",
-        "-y",
-        "-f",
-        str(private_key),
-    ])
+    if shutil.which("ssh-keygen") is None:
+        raise RuntimeError("ssh-keygen is required to generate SuperNode credentials.")
     result = subprocess.run(
         ["ssh-keygen", "-y", "-f", str(private_key)],
         check=True,
