@@ -17,7 +17,15 @@ def test_generate_credentials_creates_unique_key_pairs(monkeypatch, tmp_path: Pa
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("generated", encoding="utf-8")
 
+    def fake_ssh_keygen(args: list[str]) -> object:
+        commands.append(args)
+        output = Path(args[args.index("-f") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        return type("Result", (), {"stdout": "ecdsa-sha2-nistp384 AAAATEST\n"})()
+
     monkeypatch.setattr(generate_supernode_auth, "run_openssl", fake_run_openssl)
+    monkeypatch.setattr(generate_supernode_auth.subprocess, "run", fake_ssh_keygen)
+    monkeypatch.setattr(generate_supernode_auth.shutil, "which", lambda command: "/usr/bin/" + command)
 
     credentials = generate_supernode_auth.generate_credentials(
         tmp_path / "auth", ["client-1", "client-2"]
@@ -27,7 +35,9 @@ def test_generate_credentials_creates_unique_key_pairs(monkeypatch, tmp_path: Pa
     assert [public.name for _, public in credentials] == ["client-1.pub", "client-2.pub"]
     assert len(commands) == 4
     assert all("secp384r1" in command for command in commands[::2])
-    assert all("-pubout" in command for command in commands[1::2])
+    assert all("ssh-keygen" == command[0] for command in commands[1::2])
+    assert all("-y" in command and "-f" in command for command in commands[1::2])
+    assert all(public.read_text(encoding="utf-8").startswith("ecdsa-sha2-nistp384 ") for _, public in credentials)
 
 
 def test_generate_credentials_rejects_duplicate_client_ids(tmp_path: Path) -> None:
@@ -47,6 +57,15 @@ def test_generate_credentials_rejects_unsafe_client_id(tmp_path: Path) -> None:
         generate_supernode_auth.generate_credentials(tmp_path / "auth", ["../client-1"])
 
 
+def test_generate_credentials_rejects_existing_keypair(tmp_path: Path) -> None:
+    auth_dir = tmp_path / "auth"
+    auth_dir.mkdir()
+    (auth_dir / "client-1").write_text("existing", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        generate_supernode_auth.generate_credentials(auth_dir, ["client-1"])
+
+
 def test_generate_credentials_sets_private_key_permissions(monkeypatch, tmp_path: Path) -> None:
     def fake_run_openssl(args: list[str]) -> None:
         if "-out" in args:
@@ -54,7 +73,13 @@ def test_generate_credentials_sets_private_key_permissions(monkeypatch, tmp_path
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("generated", encoding="utf-8")
 
+    def fake_ssh_keygen(args: list[str]) -> object:
+        return type("Result", (), {"stdout": "ecdsa-sha2-nistp384 AAAATEST\n"})()
+
     monkeypatch.setattr(generate_supernode_auth, "run_openssl", fake_run_openssl)
+    monkeypatch.setattr(generate_supernode_auth.subprocess, "run", fake_ssh_keygen)
+    monkeypatch.setattr(generate_supernode_auth.shutil, "which", lambda command: "/usr/bin/" + command)
+
     credentials = generate_supernode_auth.generate_credentials(tmp_path / "auth", ["client-1"])
 
     private_key, public_key = credentials[0]
