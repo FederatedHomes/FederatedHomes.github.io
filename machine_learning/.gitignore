@@ -1,0 +1,20 @@
+# Local environment and secrets
+.env
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Runtime state and local credentials
+*.db
+
+# Local datasets and checkpoints
+data/
+checkpoints/
+
+# Generated Compose configuration
+docker-compose.generated.yml
+
+# Flower runtime state
+.flwr/*
+!.flwr/config.toml

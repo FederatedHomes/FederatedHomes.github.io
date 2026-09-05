@@ -1,0 +1,91 @@
+"""Tests for deployment profile and production security configuration."""
+
+from pathlib import Path
+
+import pytest
+
+from src.deployment_config import (
+    DeploymentConfigError,
+    DeploymentProfile,
+    load_deployment_config,
+    validate_no_insecure_flag,
+)
+
+
+def production_env(tmp_path: Path) -> dict[str, str]:
+    """Return a complete production configuration using temporary TLS files."""
+
+    root = tmp_path / "ca.crt"
+    cert = tmp_path / "superlink.crt"
+    key = tmp_path / "superlink.key"
+
+    for path in (root, cert, key):
+        path.write_text("test", encoding="utf-8")
+
+    return {
+        "DEPLOYMENT_PROFILE": "production",
+        "SUPERLINK_ADDRESS": "fl.example.internal:9092",
+        "TLS_ROOT_CERTIFICATES": str(root),
+        "SUPERLINK_CERTIFICATE": str(cert),
+        "SUPERLINK_PRIVATE_KEY": str(key),
+    }
+
+
+def test_development_profile_is_default() -> None:
+    config = load_deployment_config({})
+
+    assert config.profile is DeploymentProfile.DEVELOPMENT
+    assert config.superlink_address == "superlink:9092"
+    assert not config.is_production
+
+
+def test_development_profile_accepts_current_insecure_transport() -> None:
+    validate_no_insecure_flag(
+        DeploymentProfile.DEVELOPMENT,
+        ["--insecure", "--superlink", "superlink:9092"],
+    )
+
+
+def test_invalid_profile_is_rejected() -> None:
+    with pytest.raises(DeploymentConfigError, match="DEPLOYMENT_PROFILE"):
+        load_deployment_config({"DEPLOYMENT_PROFILE": "staging"})
+
+
+def test_production_requires_explicit_environment_variables() -> None:
+    with pytest.raises(DeploymentConfigError, match="required environment variables"):
+        load_deployment_config({"DEPLOYMENT_PROFILE": "production"})
+
+
+def test_production_requires_tls_files_when_requested(tmp_path: Path) -> None:
+    env = production_env(tmp_path)
+    missing = tmp_path / "missing.key"
+    env["SUPERLINK_PRIVATE_KEY"] = str(missing)
+
+    with pytest.raises(DeploymentConfigError, match="TLS files"):
+        load_deployment_config(env, require_files=True)
+
+
+def test_production_configuration_loads(tmp_path: Path) -> None:
+    config = load_deployment_config(production_env(tmp_path), require_files=True)
+
+    assert config.profile is DeploymentProfile.PRODUCTION
+    assert config.superlink_address == "fl.example.internal:9092"
+    assert config.tls_root_certificates is not None
+    assert config.superlink_certificate is not None
+    assert config.superlink_private_key is not None
+    assert config.is_production
+
+
+def test_production_rejects_insecure_flag() -> None:
+    with pytest.raises(DeploymentConfigError, match="--insecure"):
+        validate_no_insecure_flag(
+            DeploymentProfile.PRODUCTION,
+            ["--insecure", "--superlink", "fl.example.internal:9092"],
+        )
+
+
+def test_production_allows_secure_command_without_insecure_flag() -> None:
+    validate_no_insecure_flag(
+        DeploymentProfile.PRODUCTION,
+        ["--superlink", "fl.example.internal:9092", "--root-certificates", "/etc/flower/ca.crt"],
+    )

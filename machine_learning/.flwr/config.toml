@@ -4,6 +4,9 @@ default = "local"
 [superlink.supergrid]
 address = "supergrid.flower.ai"
 
+# Development-only local deployment profile.
+# Production deployment configuration is intentionally separate and is
+# validated through src.deployment_config before secure transport is enabled.
 [superlink.local]
 address = ":local:"
 
