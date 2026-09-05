@@ -70,23 +70,24 @@ def build_compose(
     """Build the logical Docker Compose model for the selected profile."""
 
     validate_clients(clients)
-    config = load_deployment_config(
-        {
-            "DEPLOYMENT_PROFILE": (
-                profile.value if isinstance(profile, DeploymentProfile) else profile
-            ),
-            "SUPERLINK_ADDRESS": os.environ.get("SUPERLINK_ADDRESS", "superlink:9092"),
-            "TLS_ROOT_CERTIFICATES": os.environ.get(
-                "TLS_ROOT_CERTIFICATES", f"{TLS_CONTAINER_DIR}/ca.crt"
-            ),
-            "SUPERLINK_CERTIFICATE": os.environ.get(
-                "SUPERLINK_CERTIFICATE", f"{TLS_CONTAINER_DIR}/superlink.crt"
-            ),
-            "SUPERLINK_PRIVATE_KEY": os.environ.get(
-                "SUPERLINK_PRIVATE_KEY", f"{TLS_CONTAINER_DIR}/superlink.key"
-            ),
-        }
-    )
+    profile_value = profile.value if isinstance(profile, DeploymentProfile) else profile
+    environment = {
+        "DEPLOYMENT_PROFILE": profile_value,
+        "SUPERLINK_ADDRESS": os.environ.get("SUPERLINK_ADDRESS", "superlink:9092"),
+        "TLS_ROOT_CERTIFICATES": os.environ.get(
+            "TLS_ROOT_CERTIFICATES", f"{TLS_CONTAINER_DIR}/ca.crt"
+        ),
+        "SUPERLINK_CERTIFICATE": os.environ.get(
+            "SUPERLINK_CERTIFICATE", f"{TLS_CONTAINER_DIR}/superlink.crt"
+        ),
+        "SUPERLINK_PRIVATE_KEY": os.environ.get(
+            "SUPERLINK_PRIVATE_KEY", f"{TLS_CONTAINER_DIR}/superlink.key"
+        ),
+    }
+    config = load_deployment_config(environment)
+
+    if config.is_production and "TLS_CERTIFICATE_HOST_DIR" not in os.environ:
+        os.environ.setdefault("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod")
 
     superlink_command = []
     supernode_prefix = []
@@ -130,7 +131,7 @@ def build_compose(
         node_command = [
             *supernode_prefix,
             "--superlink",
-            config.superlink_address,
+            "superlink:9092",
             "--clientappio-api-address",
             f"0.0.0.0:{SUPERNODE_PORT}",
             "--isolation",
@@ -184,11 +185,14 @@ def build_compose(
         "depends_on": ["superlink"],
     }
 
+    federation_profile = (
+        "production-deployment" if config.is_production else "local-deployment"
+    )
     services["trainer"] = {
         "image": "flwr/superexec:1.33.0",
         "container_name": "flwr_trainer",
         "entrypoint": ["flwr"],
-        "command": ["run", ".", "local-deployment", "--stream"],
+        "command": ["run", ".", federation_profile, "--stream"],
         "working_dir": "/app",
         "volumes": [".:/app"],
         "networks": ["flwr-network"],
