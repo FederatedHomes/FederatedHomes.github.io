@@ -37,19 +37,12 @@ for client in clients:
     checkpoint_dir = str(client.get("checkpoint_dir", "")).strip()
 
     if not client_id:
-        raise SystemExit(
-            "ERROR: Every client must define an 'id'."
-        )
-
+        raise SystemExit("ERROR: Every client must define an 'id'.")
     if not data_dir:
-        raise SystemExit(
-            f"ERROR: Client '{client_id}' is missing 'data_dir'."
-        )
-
+        raise SystemExit(f"ERROR: Client '{client_id}' is missing 'data_dir'.")
     if not checkpoint_dir:
         raise SystemExit(
-            f"ERROR: Client '{client_id}' is missing "
-            "'checkpoint_dir'."
+            f"ERROR: Client '{client_id}' is missing 'checkpoint_dir'."
         )
 
     Path(data_dir).mkdir(parents=True, exist_ok=True)
@@ -57,8 +50,7 @@ for client in clients:
 
     print(
         f"Prepared {client_id}: "
-        f"data={data_dir}, "
-        f"checkpoints={checkpoint_dir}"
+        f"data={data_dir}, checkpoints={checkpoint_dir}"
     )
 PY
 }
@@ -73,6 +65,13 @@ create_env_file() {
       echo "Warning: .env.example not found."
       echo "Create .env manually if needed."
     fi
+  fi
+
+  if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
   fi
 }
 
@@ -92,7 +91,8 @@ generate_compose_file() {
 
   python3 generate_compose.py \
     --config clients.yml \
-    --output docker-compose.generated.yml
+    --output docker-compose.generated.yml \
+    --profile "${DEPLOYMENT_PROFILE:-development}"
 
   if [ ! -f docker-compose.generated.yml ]; then
     echo "ERROR: Docker Compose file was not generated."
@@ -114,52 +114,33 @@ from pathlib import Path
 import yaml
 
 config_path = Path("clients.yml")
-
 with config_path.open("r", encoding="utf-8") as handle:
     config = yaml.safe_load(handle) or {}
 
 clients = config.get("clients", [])
-
 missing = []
 
 for client in clients:
-    client_id = str(client.get("id", "")).strip()
     data_dir = Path(str(client.get("data_dir", "")).strip())
-
-    train_csv = data_dir / "train.csv"
-    val_csv = data_dir / "val.csv"
-
-    if not train_csv.is_file():
-        missing.append(str(train_csv))
-
-    if not val_csv.is_file():
-        missing.append(str(val_csv))
+    for filename in ("train.csv", "val.csv"):
+        path = data_dir / filename
+        if not path.is_file():
+            missing.append(str(path))
 
 if missing:
-    cat <<EOF
-WARNING: Some client CSV files are missing.
-
-The affected clients will use synthetic mock data until
-the required CSV files are provided.
-
-Missing files:
-EOF
-
+    print("WARNING: Some client CSV files are missing.")
+    print("\nThe affected clients will use synthetic mock data until")
+    print("the required CSV files are provided.\n")
+    print("Missing files:")
     for file in missing:
-        echo "  $file"
-
-    cat <<'EOF'
-
-Each client data directory should normally contain:
-  train.csv
-  val.csv
-
-The CSV files should conform to the DataContract defined by
-the federated learning application.
-EOF
-else
-    echo "All configured client train/validation CSV files are present."
-fi
+        print(f"  {file}")
+    print("\nEach client data directory should normally contain:")
+    print("  train.csv")
+    print("  val.csv")
+    print("\nThe CSV files should conform to the DataContract defined by")
+    print("the federated learning application.")
+else:
+    print("All configured client train/validation CSV files are present.")
 PY
 }
 
@@ -196,20 +177,14 @@ run_tests() {
   if [ ! -f docker-compose.generated.yml ]; then
     echo "docker-compose.generated.yml not found."
     echo "Generating it from clients.yml..."
-
     generate_compose_file
   fi
 
-  echo
   echo "=========================================="
   echo "Building shared Flower SuperExec image"
   echo "=========================================="
 
-  if ! docker build \
-      -f Dockerfile.superexec \
-      -t flwr_superexec:local \
-      .; then
-
+  if ! docker build -f Dockerfile.superexec -t flwr_superexec:local .; then
     echo "ERROR: Failed to build flwr_superexec:local."
     return 1
   fi
@@ -217,27 +192,20 @@ run_tests() {
   echo
   echo "Shared SuperExec image built successfully."
   echo
-
   echo "=========================================="
   echo "Running pytest inside Docker"
   echo "=========================================="
 
-  if docker compose \
-      -f docker-compose.generated.yml \
-      run --rm test-runner; then
-
+  if docker compose -f docker-compose.generated.yml run --rm test-runner; then
     echo
     echo "=========================================="
     echo "All application tests passed."
     echo "=========================================="
-
   else
-
     echo
     echo "=========================================="
     echo "Application tests failed."
     echo "=========================================="
-
     return 1
   fi
 }
@@ -246,7 +214,6 @@ start_trainer() {
   if [ ! -f docker-compose.generated.yml ]; then
     echo "docker-compose.generated.yml not found."
     echo "Generating it from clients.yml..."
-
     generate_compose_file
   fi
 
@@ -254,11 +221,7 @@ start_trainer() {
   echo "Building shared Flower SuperExec image"
   echo "=========================================="
 
-  if ! docker build \
-      -f Dockerfile.superexec \
-      -t flwr_superexec:local \
-      .; then
-
+  if ! docker build -f Dockerfile.superexec -t flwr_superexec:local .; then
     echo "ERROR: Failed to build flwr_superexec:local."
     return 1
   fi
@@ -266,29 +229,19 @@ start_trainer() {
   echo
   echo "Shared SuperExec image built successfully."
   echo
-
   echo "=========================================="
   echo "Starting Docker Compose trainer and dependencies"
   echo "=========================================="
 
-  if docker compose \
-      -f docker-compose.generated.yml \
-      up trainer; then
-
+  if docker compose -f docker-compose.generated.yml up trainer; then
     echo
     echo "Trainer completed successfully."
     echo "Shutting down the Compose stack..."
-
-    docker compose \
-      -f docker-compose.generated.yml \
-      down
-
+    docker compose -f docker-compose.generated.yml down
   else
-
     echo
     echo "Trainer exited with an error."
     echo "Leaving the Compose stack running for inspection."
-
     return 1
   fi
 }
@@ -303,7 +256,6 @@ from pathlib import Path
 import yaml
 
 config_path = Path("clients.yml")
-
 if not config_path.exists():
     print("  clients.yml not found")
     raise SystemExit(0)
@@ -311,13 +263,10 @@ if not config_path.exists():
 with config_path.open("r", encoding="utf-8") as handle:
     config = yaml.safe_load(handle) or {}
 
-clients = config.get("clients", [])
-
-for client in clients:
+for client in config.get("clients", []):
     client_id = str(client.get("id", "")).strip()
     data_dir = str(client.get("data_dir", "")).strip()
     checkpoint_dir = str(client.get("checkpoint_dir", "")).strip()
-
     print(f"  {client_id}")
     print(f"    data:        {data_dir}")
     print(f"    checkpoints: {checkpoint_dir}")
@@ -343,28 +292,15 @@ EOF
 
 
 print_menu
-read -rp "Enter choice [1-6]: " choice
+read -rp "Enter choice [1-7]: " choice
 
 case "$choice" in
-  1)
-    setup
-    ;;
-  2)
-    generate_compose_file
-    ;;
-  3)
-    start_trainer
-    ;;
-  4)
-    setup
-    start_trainer
-    ;;
-  5)
-    run_tests
-    ;;
-  6)
-    print_config
-    ;;
+  1) setup ;;
+  2) create_env_file && generate_compose_file ;;
+  3) start_trainer ;;
+  4) setup && start_trainer ;;
+  5) run_tests ;;
+  6) print_config ;;
   7)
     echo "Exiting."
     exit 0

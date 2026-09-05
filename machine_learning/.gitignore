@@ -4,6 +4,7 @@
 *.pem
 *.p12
 *.pfx
+certificates/
 
 # Runtime state and local credentials
 *.db
