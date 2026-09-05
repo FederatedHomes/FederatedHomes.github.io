@@ -4,14 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import yaml
+
+from src.deployment_config import (
+    DeploymentProfile,
+    load_deployment_config,
+    validate_no_insecure_flag,
+)
 
 
 SUPERNODE_PORT = 9094
 SUPERNODE_IMAGE = "flwr/supernode:1.33.0"
 SUPEREXEC_IMAGE = "flwr_superexec:local"
+TLS_CONTAINER_DIR = "/etc/flower/tls"
 
 
 def validate_clients(clients: list[dict]) -> None:
@@ -54,20 +62,60 @@ def app_name(client_id: str) -> str:
     return f"superexec-clientapp-{safe_id(client_id)}"
 
 
-def build_compose(clients: list[dict]) -> dict:
-    """Build the logical Docker Compose model."""
+def build_compose(
+    clients: list[dict],
+    *,
+    profile: DeploymentProfile | str = DeploymentProfile.DEVELOPMENT,
+) -> dict:
+    """Build the logical Docker Compose model for the selected profile."""
 
     validate_clients(clients)
-
-    services = {
-        "superlink": {
-            "image": "flwr/superlink:1.33.0",
-            "container_name": "flwr_superlink",
-            "command": ["--insecure", "--isolation", "process"],
-            "ports": ["9091:9091", "9092:9092", "9093:9093"],
-            "networks": ["flwr-network"],
+    config = load_deployment_config(
+        {
+            "DEPLOYMENT_PROFILE": (
+                profile.value if isinstance(profile, DeploymentProfile) else profile
+            ),
+            "SUPERLINK_ADDRESS": os.environ.get("SUPERLINK_ADDRESS", "superlink:9092"),
+            "TLS_ROOT_CERTIFICATES": os.environ.get(
+                "TLS_ROOT_CERTIFICATES", f"{TLS_CONTAINER_DIR}/ca.crt"
+            ),
+            "SUPERLINK_CERTIFICATE": os.environ.get(
+                "SUPERLINK_CERTIFICATE", f"{TLS_CONTAINER_DIR}/superlink.crt"
+            ),
+            "SUPERLINK_PRIVATE_KEY": os.environ.get(
+                "SUPERLINK_PRIVATE_KEY", f"{TLS_CONTAINER_DIR}/superlink.key"
+            ),
         }
+    )
+
+    superlink_command = []
+    supernode_prefix = []
+    if config.is_production:
+        superlink_command.extend(config.superlink_tls_args())
+        supernode_prefix.extend(config.supernode_tls_args())
+    else:
+        superlink_command.append("--insecure")
+        supernode_prefix.append("--insecure")
+
+    validate_no_insecure_flag(config.profile, superlink_command)
+    validate_no_insecure_flag(config.profile, supernode_prefix)
+
+    tls_mount = None
+    if config.is_production:
+        host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod")
+        tls_mount = f"{host_tls_dir}:{TLS_CONTAINER_DIR}:ro"
+
+    superlink_service = {
+        "image": "flwr/superlink:1.33.0",
+        "container_name": "flwr_superlink",
+        "command": [*superlink_command, "--isolation", "process"],
+        "ports": ["9091:9091", "9092:9092", "9093:9093"],
+        "networks": ["flwr-network"],
     }
+    if tls_mount:
+        superlink_service["volumes"] = [tls_mount]
+
+    services = {"superlink": superlink_service}
 
     node_services = []
     app_services = []
@@ -79,20 +127,25 @@ def build_compose(clients: list[dict]) -> dict:
         node_services.append(node)
         app_services.append(app)
 
+        node_command = [
+            *supernode_prefix,
+            "--superlink",
+            config.superlink_address,
+            "--clientappio-api-address",
+            f"0.0.0.0:{SUPERNODE_PORT}",
+            "--isolation",
+            "process",
+        ]
+        validate_no_insecure_flag(config.profile, node_command)
+
         services[node] = {
             "container_name": f"flwr_{node.replace('-', '_')}",
-            "command": [
-                "--insecure",
-                "--superlink",
-                "superlink:9092",
-                "--clientappio-api-address",
-                f"0.0.0.0:{SUPERNODE_PORT}",
-                "--isolation",
-                "process",
-            ],
+            "command": node_command,
             "networks": ["flwr-network"],
             "depends_on": ["superlink"],
         }
+        if tls_mount:
+            services[node]["volumes"] = [tls_mount]
 
         services[app] = {
             "container_name": f"flwr_{app.replace('-', '_')}",
@@ -207,7 +260,7 @@ def render_compose(compose: dict) -> str:
 
 
 def main() -> None:
-    """Load clients.yml and generate docker-compose.generated.yml."""
+    """Load clients.yml and generate Docker Compose."""
 
     parser = argparse.ArgumentParser(
         description="Generate an N-client Flower 1.33.0 Docker Compose deployment."
@@ -217,6 +270,12 @@ def main() -> None:
         "--output",
         default="docker-compose.generated.yml",
         help="Output Docker Compose file",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=[profile.value for profile in DeploymentProfile],
+        default=os.environ.get("DEPLOYMENT_PROFILE", DeploymentProfile.DEVELOPMENT.value),
+        help="Deployment security profile",
     )
     args = parser.parse_args()
 
@@ -230,10 +289,10 @@ def main() -> None:
         config = yaml.safe_load(handle) or {}
 
     clients = config.get("clients", [])
-    compose = build_compose(clients)
+    compose = build_compose(clients, profile=args.profile)
 
     output_path.write_text(render_compose(compose), encoding="utf-8")
-    print(f"Generated {output_path} for {len(clients)} clients.")
+    print(f"Generated {output_path} for {len(clients)} clients ({args.profile} profile).")
 
 
 if __name__ == "__main__":
