@@ -178,6 +178,69 @@ setup() {
   echo "Setup completed."
 }
 
+run_tests() {
+  echo "=========================================="
+  echo "Running application tests in Docker"
+  echo "=========================================="
+
+  if [ ! -d tests ]; then
+    echo "ERROR: tests directory not found."
+    return 1
+  fi
+
+  if ! find tests -maxdepth 1 -name 'test_*.py' -print -quit | grep -q .; then
+    echo "ERROR: No pytest test files found in tests/."
+    return 1
+  fi
+
+  if [ ! -f docker-compose.generated.yml ]; then
+    echo "docker-compose.generated.yml not found."
+    echo "Generating it from clients.yml..."
+
+    generate_compose_file
+  fi
+
+  echo
+  echo "=========================================="
+  echo "Building shared Flower SuperExec image"
+  echo "=========================================="
+
+  if ! docker build \
+      -f Dockerfile.superexec \
+      -t flwr_superexec:local \
+      .; then
+
+    echo "ERROR: Failed to build flwr_superexec:local."
+    return 1
+  fi
+
+  echo
+  echo "Shared SuperExec image built successfully."
+  echo
+
+  echo "=========================================="
+  echo "Running pytest inside Docker"
+  echo "=========================================="
+
+  if docker compose \
+      -f docker-compose.generated.yml \
+      run --rm test-runner; then
+
+    echo
+    echo "=========================================="
+    echo "All application tests passed."
+    echo "=========================================="
+
+  else
+
+    echo
+    echo "=========================================="
+    echo "Application tests failed."
+    echo "=========================================="
+
+    return 1
+  fi
+}
 
 start_trainer() {
   if [ ! -f docker-compose.generated.yml ]; then
@@ -272,8 +335,9 @@ Select an option:
   2) Generate Compose configuration only
   3) Start the trainer service
   4) Setup and then start the trainer
-  5) Show configured clients
-  6) Exit
+  5) Run application tests in Docker
+  6) Show configured clients
+  7) Exit
 EOF
 }
 
@@ -285,29 +349,26 @@ case "$choice" in
   1)
     setup
     ;;
-
   2)
     generate_compose_file
     ;;
-
   3)
     start_trainer
     ;;
-
   4)
     setup
     start_trainer
     ;;
-
   5)
+    run_tests
+    ;;
+  6)
     print_config
     ;;
-
-  6)
+  7)
     echo "Exiting."
     exit 0
     ;;
-
   *)
     echo "Invalid choice. Exiting."
     exit 1

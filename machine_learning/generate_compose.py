@@ -235,6 +235,20 @@ def build_compose(clients: list[dict]) -> dict:
         ),
     }
 
+    services["test-runner"] = {
+        "container_name": "flwr_test_runner",
+        "entrypoint": ["pytest"],
+        "command": [
+            "tests/",
+            "-v",
+        ],
+        "working_dir": "/app",
+        "volumes": [
+            ".:/app",
+        ],
+        "networks": ["flwr-network"],
+    }
+
     return {
         "networks": {
             "flwr-network": {
@@ -297,8 +311,9 @@ def render_compose(compose: dict) -> str:
         # This includes:
         #   - client SuperExec services
         #   - server SuperExec service
+        #   - test-runner service
         # ---------------------------------------------------------
-        elif name.startswith("superexec-"):
+        elif name.startswith("superexec-") or name == "test-runner":
             lines.append(
                 "    <<: *flwr_superexec"
             )

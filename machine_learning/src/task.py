@@ -14,6 +14,9 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 
 from src.data_contract import CONTRACT
 
+import logging
+logger = logging.getLogger(__name__)
+
 # define a mapping from string representation of dtypes to PyTorch dtypes
 TORCH_DTYPES = {
     "float32": torch.float32,
@@ -222,6 +225,8 @@ class StreamingDataset(IterableDataset):
         self.contract = contract
         self.synthetic = False
 
+        self._validate_contract_configuration()
+
         if not os.path.exists(csv_path):
             self.synthetic = True
             self.synthetic_size = BATCH_SIZE
@@ -258,18 +263,250 @@ class StreamingDataset(IterableDataset):
             i: name for i, name in enumerate(self.contract.feature_names)
         }
 
-    def _validate_raw_schema(self, segment_chunk):
-        """Ensure the local CSV conforms to the contractual column schema."""
-        required_columns = set(self.contract.feature_names) | {
-            self.contract.label_column
-        }
-        missing_columns = required_columns - set(segment_chunk.columns)
+    def _validate_raw_schema(self, chunk):
+        """
+        Validate the raw CSV schema against the DataContract.
+
+        Required columns:
+            Missing -> reject.
+
+        Extra columns:
+            Warn and ignore.
+
+        Column order:
+            Not significant. Contract ordering is applied later.
+        """
+
+        required_columns = (
+            set(self.contract.feature_names)
+            | {self.contract.label_column}
+        )
+
+        actual_columns = set(chunk.columns)
+
+        missing_columns = required_columns - actual_columns
+        extra_columns = actual_columns - required_columns
 
         if missing_columns:
             raise ValueError(
-                f"CSV is missing required contract columns: "
+                "CSV is missing required contract columns: "
                 f"{sorted(missing_columns)}"
             )
+
+        if extra_columns:
+            logger.warning(
+                "CSV contains extra columns that are not part of the "
+                "DataContract and will be ignored: %s",
+                sorted(extra_columns),
+            )
+
+    def _validate_contract_configuration(self):
+        """
+        Validate configuration values that control the data pipeline.
+
+        These checks are performed before any client data is processed.
+        """
+
+        contract = self.contract
+
+        if contract.segment_length <= 0:
+            raise ValueError(
+                "Invalid DataContract segment_length: "
+                f"{contract.segment_length}. Expected a positive integer."
+            )
+
+        if not 0 <= contract.overlap_fraction < 1:
+            raise ValueError(
+                "Invalid DataContract overlap_fraction: "
+                f"{contract.overlap_fraction}. "
+                "Expected a value in the range [0, 1)."
+            )
+
+        if contract.segmentation_step_size <= 0:
+            raise ValueError(
+                "Invalid DataContract segmentation step size: "
+                f"{contract.segmentation_step_size}"
+            )
+
+        if contract.num_features <= 0:
+            raise ValueError(
+                "DataContract must define at least one feature."
+            )
+
+        if contract.num_classes <= 0:
+            raise ValueError(
+                "DataContract must define at least one label class."
+            )
+
+        if contract.transform_type != "cwt":
+            raise ValueError(
+                "Unsupported DataContract transform type: "
+                f"{contract.transform_type}"
+            )
+
+        if contract.num_scales <= 0:
+            raise ValueError(
+                "DataContract num_scales must be positive."
+            )
+
+        if contract.scale_min <= 0:
+            raise ValueError(
+                "DataContract scale_min must be greater than zero."
+            )
+
+        if contract.scale_max < contract.scale_min:
+            raise ValueError(
+                "DataContract scale_max must be greater than or equal "
+                "to scale_min."
+            )
+
+        if (
+            not isinstance(contract.output_size, tuple)
+            or len(contract.output_size) != 2
+        ):
+            raise ValueError(
+                "DataContract output_size must be a "
+                "(height, width) tuple."
+            )
+
+        output_height, output_width = contract.output_size
+
+        if output_height <= 0 or output_width <= 0:
+            raise ValueError(
+                "DataContract output_size dimensions must be positive: "
+                f"{contract.output_size}"
+            )
+
+        if contract.tensor_layout != "NCHW":
+            raise ValueError(
+                "Unsupported DataContract tensor layout: "
+                f"{contract.tensor_layout}. Expected 'NCHW'."
+            )
+
+        if contract.feature_dtype not in TORCH_DTYPES:
+            raise ValueError(
+                "Unsupported DataContract feature dtype: "
+                f"{contract.feature_dtype}"
+            )
+
+        if contract.label_dtype not in TORCH_DTYPES:
+            raise ValueError(
+                "Unsupported DataContract label dtype: "
+                f"{contract.label_dtype}"
+            )
+
+        if contract.tensor_dtype not in TORCH_DTYPES:
+            raise ValueError(
+                "Unsupported DataContract tensor dtype: "
+                f"{contract.tensor_dtype}"
+            )
+
+        if contract.tensor_shape != (
+            contract.num_features,
+            output_height,
+            output_width,
+        ):
+            raise ValueError(
+                "DataContract tensor shape is inconsistent with "
+                "feature count and output size."
+            )
+
+    def _align_feature_dtype(self, segment_features):
+        """
+        Align feature data to the DataContract feature dtype.
+
+        Conversion is permitted when pandas/numpy can perform it.
+        A conversion is logged so the client-side data normalization
+        remains observable.
+        """
+
+        required_dtype = np.dtype(self.contract.feature_dtype)
+
+        for feature_name in self.contract.feature_names:
+            source_series = segment_features[feature_name]
+
+            try:
+                converted_series = pd.to_numeric(
+                    source_series,
+                    errors="raise",
+                )
+                converted_series = converted_series.astype(
+                    required_dtype
+                )
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(
+                    f"Feature '{feature_name}' cannot be converted "
+                    f"to required DataContract dtype "
+                    f"'{self.contract.feature_dtype}'."
+                ) from exc
+
+            source_dtype = source_series.dtype
+
+            if source_dtype != converted_series.dtype:
+                logger.warning(
+                    "Converting feature '%s' from dtype '%s' to "
+                    "DataContract dtype '%s'.",
+                    feature_name,
+                    source_dtype,
+                    self.contract.feature_dtype,
+                )
+
+            segment_features[feature_name] = converted_series
+
+        return segment_features
+
+    def _align_label_dtype(self, segment_chunk):
+        """Convert labels safely to the contract-defined dtype."""
+
+        label_column = self.contract.label_column
+        original_dtype = segment_chunk[label_column].dtype
+
+        try:
+            label_series = pd.to_numeric(
+                segment_chunk[label_column],
+                errors="raise",
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Label column '{label_column}' contains "
+                "non-convertible values."
+            ) from exc
+
+        if label_series.isna().any():
+            raise ValueError(
+                f"Label column '{label_column}' contains "
+                "missing values."
+            )
+
+        if not np.equal(
+            label_series.to_numpy(),
+            np.floor(label_series.to_numpy()),
+        ).all():
+            raise ValueError(
+                f"Non-integer values found in label column "
+                f"'{label_column}'"
+            )
+
+        try:
+            aligned_labels = label_series.astype(
+                self.contract.label_dtype
+            )
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                f"Label column '{label_column}' cannot be converted "
+                f"to contract dtype '{self.contract.label_dtype}'."
+            ) from exc
+
+        if original_dtype != aligned_labels.dtype:
+            logger.warning(
+                "Converting label column '%s' from dtype %s to "
+                "contract dtype %s.",
+                label_column,
+                original_dtype,
+                aligned_labels.dtype,
+            )
+
+        return aligned_labels
 
     def validate_segment(self, segment_chunk):
         """Validate a contract-sized segment before feature transformation."""
@@ -280,33 +517,13 @@ class StreamingDataset(IterableDataset):
                 f"{self.contract.segment_length}, got {len(segment_chunk)}"
             )
 
-        label_series = pd.to_numeric(
-            segment_chunk[self.contract.label_column],
-            errors="coerce",
-        )
-
-        if label_series.isna().any():
-            raise ValueError(
-                f"Non-numeric or missing values found in label column "
-                f"'{self.contract.label_column}'"
-            )
-
-        if not np.equal(
-            label_series.to_numpy(),
-            label_series.astype(np.int64).to_numpy(),
-        ).all():
-            raise ValueError(
-                f"Non-integer values found in label column "
-                f"'{self.contract.label_column}'"
-            )
+        aligned_labels = self._align_label_dtype(segment_chunk)
 
         valid_labels = {
             int(key) for key in self.contract.label_info.keys()
         }
 
-        observed_labels = set(
-            label_series.astype(np.int64).tolist()
-        )
+        observed_labels = set(aligned_labels.tolist())
 
         bad_labels = observed_labels - valid_labels
 
@@ -316,47 +533,90 @@ class StreamingDataset(IterableDataset):
                 f"Valid labels: {sorted(valid_labels)}"
             )
 
+        return aligned_labels
+
+    def _validate_tensor(self, tensor):
+        """
+        Validate a model-facing tensor against the DataContract.
+        """
+
+        expected_shape = self.contract.tensor_shape
+        expected_dtype = np.dtype(self.contract.tensor_dtype)
+
+        actual_shape = tuple(tensor.shape)
+
+        if actual_shape != expected_shape:
+            raise ValueError(
+                "Invalid model input tensor dimensions: "
+                f"expected {expected_shape}, "
+                f"got {actual_shape}"
+            )
+
+        if tensor.dtype != expected_dtype:
+            raise ValueError(
+                "Invalid model input tensor dtype: "
+                f"expected {expected_dtype}, "
+                f"got {tensor.dtype}"
+            )
+
+        return tensor
+
     def create_feature_and_label(self, segment_chunk):
         """
         Process one contract-sized DataFrame segment.
-
-        Returns:
-            CWT feature matrix with shape (channels, height, width)
-            and the corresponding integer class label.
         """
 
-        self.validate_segment(segment_chunk)
+        aligned_labels = self.validate_segment(segment_chunk)
 
-        # Explicitly select and order only the contract-defined features.
         feature_columns = list(self.contract.feature_names)
-        segment_features = segment_chunk.loc[:, feature_columns].copy()
 
-        # Contract-defined missing-value strategy:
-        # forward fill, backward fill, then replace any remaining NaNs with zero.
-        if self.contract.missing_value_strategy == "forward_fill_backward_fill_zero":
+        segment_features = segment_chunk.loc[
+            :,
+            feature_columns,
+        ].copy()
+
+        segment_features = self._align_feature_dtype(
+            segment_features
+        )
+
+        if (
+            self.contract.missing_value_strategy
+            == "forward_fill_backward_fill_zero"
+        ):
             segment_features = (
-                segment_features.ffill().bfill().fillna(0)
+                segment_features
+                .ffill()
+                .bfill()
+                .fillna(0)
             )
         else:
             raise ValueError(
-                f"Unsupported missing-value strategy: "
+                "Unsupported missing-value strategy: "
                 f"{self.contract.missing_value_strategy}"
             )
 
-        # Convert feature values to the contract-defined source dtype.
-        segment_features = segment_features.astype(self.contract.feature_dtype)
+        segment_features = segment_features.astype(
+            self.contract.feature_dtype
+        )
 
-        # Create a single segment label using the mode of the contractual label column.
-        label = int(segment_chunk[self.contract.label_column].mode().iloc[0])
+        label = int(
+            aligned_labels.mode().iloc[0]
+        )
 
         self.num_features = self.contract.num_features
+
         self.dict_idx_feature = {
-            i: name for i, name in enumerate(feature_columns)
+            i: name
+            for i, name in enumerate(feature_columns)
         }
 
-        segment_array = segment_features.to_numpy(dtype=self.contract.feature_dtype)
+        segment_array = segment_features.to_numpy(
+            dtype=self.contract.feature_dtype
+        )
 
-        segment_cwt_matrix = self.create_cwt_matrix(segment_array)
+        segment_cwt_matrix = self.create_cwt_matrix(
+            segment_array
+        )
 
         return segment_cwt_matrix, label
 
@@ -401,7 +661,7 @@ class StreamingDataset(IterableDataset):
                 self.contract.tensor_dtype
             )
 
-        return cwt_matrix
+        return self._validate_tensor(cwt_matrix)
 
     def __iter__(self):
         """
