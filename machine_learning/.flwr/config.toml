@@ -5,11 +5,16 @@ default = "local"
 address = "supergrid.flower.ai"
 
 # Development-only local deployment profile.
-# Production deployment configuration is intentionally separate and is
-# validated through src.deployment_config before secure transport is enabled.
 [superlink.local]
 address = ":local:"
 
 [superlink.local-deployment]
 address = "superlink:9093"
 insecure = true
+
+# Production Docker profile. The trainer mounts the project at /app, so the
+# production CA is available at /app/certificates/prod/ca.crt.
+# This profile is selected explicitly by the production Compose generator.
+[superlink.production-deployment]
+address = "superlink:9093"
+root-certificates = "/app/certificates/prod/ca.crt"
