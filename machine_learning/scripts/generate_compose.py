@@ -7,26 +7,22 @@ import argparse
 import os
 from pathlib import Path
 import sys
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 import yaml
 
-from src.deployment_config import (
-    DeploymentProfile,
-    load_deployment_config,
-    validate_no_insecure_flag,
-)
-
+from src.deployment_config import DeploymentProfile, load_deployment_config, validate_no_insecure_flag
 
 SUPERNODE_PORT = 9094
 SUPERNODE_IMAGE = "flwr/supernode:1.33.0"
 SUPEREXEC_IMAGE = "flwr_superexec:local"
 TLS_CONTAINER_DIR = "/etc/flower/tls"
+SUPERNODE_AUTH_CONTAINER_DIR = "/etc/flower/auth"
 
 
 def validate_clients(clients: list[dict]) -> None:
-    """Validate the client configuration."""
     if len(clients) < 2:
         raise ValueError("At least 2 clients are required.")
     ids = [str(client.get("id", "")).strip() for client in clients]
@@ -41,7 +37,6 @@ def validate_clients(clients: list[dict]) -> None:
 
 
 def safe_id(client_id: str) -> str:
-    """Convert a client ID into a Docker Compose service-name fragment."""
     return client_id.strip().lower().replace("_", "-").replace(" ", "-")
 
 
@@ -53,12 +48,7 @@ def app_name(client_id: str) -> str:
     return f"superexec-clientapp-{safe_id(client_id)}"
 
 
-def build_compose(
-    clients: list[dict],
-    *,
-    profile: DeploymentProfile | str = DeploymentProfile.DEVELOPMENT,
-) -> dict:
-    """Build the logical Docker Compose model for the selected profile."""
+def build_compose(clients: list[dict], *, profile: DeploymentProfile | str = DeploymentProfile.DEVELOPMENT) -> dict:
     validate_clients(clients)
     profile_value = profile.value if isinstance(profile, DeploymentProfile) else profile
     if profile_value == DeploymentProfile.PRODUCTION.value:
@@ -82,10 +72,8 @@ def build_compose(
     validate_no_insecure_flag(config.profile, superlink_command)
     validate_no_insecure_flag(config.profile, supernode_prefix)
 
-    tls_mount = None
-    if config.is_production:
-        host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod")
-        tls_mount = f"{host_tls_dir}:{TLS_CONTAINER_DIR}:ro"
+    host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod")
+    superlink_tls_mount = f"{host_tls_dir}:{TLS_CONTAINER_DIR}:ro" if config.is_production else None
 
     superlink_service = {
         "image": "flwr/superlink:1.33.0",
@@ -94,8 +82,8 @@ def build_compose(
         "ports": ["9091:9091", "9092:9092", "9093:9093"],
         "networks": ["flwr-network"],
     }
-    if tls_mount:
-        superlink_service["volumes"] = [tls_mount]
+    if superlink_tls_mount:
+        superlink_service["volumes"] = [superlink_tls_mount]
 
     services = {"superlink": superlink_service}
     node_services = []
@@ -114,8 +102,14 @@ def build_compose(
             "--clientappio-api-address", f"0.0.0.0:{SUPERNODE_PORT}",
             "--isolation", "process",
         ]
+        node_volumes = []
         if config.is_production:
             node_command.extend(config.supernode_auth_args(client_id))
+            # Do not mount the SuperLink private key into any SuperNode.
+            node_volumes.extend([
+                f"{host_tls_dir}/ca.crt:{TLS_CONTAINER_DIR}/ca.crt:ro",
+                f"{config.supernode_auth_host_key(client_id)}:{SUPERNODE_AUTH_CONTAINER_DIR}/{client_id}:ro",
+            ])
         validate_no_insecure_flag(config.profile, node_command)
 
         services[node] = {
@@ -124,8 +118,8 @@ def build_compose(
             "networks": ["flwr-network"],
             "depends_on": ["superlink"],
         }
-        if tls_mount:
-            services[node]["volumes"] = [tls_mount]
+        if node_volumes:
+            services[node]["volumes"] = node_volumes
 
         services[app] = {
             "container_name": f"flwr_{app.replace('-', '_')}",
@@ -172,7 +166,6 @@ def build_compose(
 
 
 def render_compose(compose: dict) -> str:
-    """Render Docker Compose with shared image YAML anchors."""
     lines = [
         "networks:", "  flwr-network:", "    driver: bridge", "",
         "# Shared Flower SuperNode image", "x-flwr-supernode: &flwr_supernode",
