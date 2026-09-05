@@ -29,12 +29,19 @@ class DeploymentConfig:
     tls_root_certificates: Path | None = None
     superlink_certificate: Path | None = None
     superlink_private_key: Path | None = None
+    supernode_auth_private_key_dir: Path | None = None
 
     @property
     def is_production(self) -> bool:
         """Return whether this configuration is production mode."""
 
         return self.profile is DeploymentProfile.PRODUCTION
+
+    @property
+    def supernode_auth_enabled(self) -> bool:
+        """Return whether CLI-managed SuperNode authentication is enabled."""
+
+        return self.is_production
 
     def superlink_tls_args(self) -> list[str]:
         """Return SuperLink TLS arguments for a production launch."""
@@ -53,6 +60,13 @@ class DeploymentConfig:
             str(self.superlink_private_key),
         ]
 
+    def superlink_auth_args(self) -> list[str]:
+        """Return SuperLink SuperNode-authentication arguments."""
+
+        if not self.supernode_auth_enabled:
+            return []
+        return ["--enable-supernode-auth"]
+
     def supernode_tls_args(self) -> list[str]:
         """Return SuperNode TLS arguments for a production launch."""
 
@@ -60,6 +74,24 @@ class DeploymentConfig:
             return []
         assert self.tls_root_certificates is not None
         return ["--root-certificates", str(self.tls_root_certificates)]
+
+    def supernode_auth_args(self, client_id: str) -> list[str]:
+        """Return authentication arguments for a specific SuperNode.
+
+        The authentication directory contains one private key per client. The
+        key filename is the configured client ID, matching Flower's
+        ``--auth-supernode-private-key`` file argument.
+        """
+
+        if not self.supernode_auth_enabled:
+            return []
+        if not client_id or not client_id.strip():
+            raise DeploymentConfigError(
+                "A non-empty client ID is required for SuperNode authentication."
+            )
+        assert self.supernode_auth_private_key_dir is not None
+        key_path = self.supernode_auth_private_key_dir / client_id.strip()
+        return ["--auth-supernode-private-key", str(key_path)]
 
     def cli_tls_config(self) -> dict[str, str | bool]:
         """Return the Flower CLI federation configuration for this profile."""
@@ -82,12 +114,14 @@ TLS_ROOT_CERTIFICATES_ENV = "TLS_ROOT_CERTIFICATES"
 SUPERLINK_CERTIFICATE_ENV = "SUPERLINK_CERTIFICATE"
 SUPERLINK_PRIVATE_KEY_ENV = "SUPERLINK_PRIVATE_KEY"
 TLS_CERTIFICATE_HOST_DIR_ENV = "TLS_CERTIFICATE_HOST_DIR"
+SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV = "SUPERNODE_AUTH_PRIVATE_KEY_DIR"
 
 PRODUCTION_REQUIRED_ENV = (
     SUPERLINK_ADDRESS_ENV,
     TLS_ROOT_CERTIFICATES_ENV,
     SUPERLINK_CERTIFICATE_ENV,
     SUPERLINK_PRIVATE_KEY_ENV,
+    SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV,
 )
 
 
@@ -151,17 +185,19 @@ def load_deployment_config(
         "tls_root_certificates": Path(env[TLS_ROOT_CERTIFICATES_ENV]),
         "superlink_certificate": Path(env[SUPERLINK_CERTIFICATE_ENV]),
         "superlink_private_key": Path(env[SUPERLINK_PRIVATE_KEY_ENV]),
+        "supernode_auth_private_key_dir": Path(env[SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV]),
     }
 
     if require_files:
         missing_files = [
             f"{name}={path}"
             for name, path in paths.items()
-            if not path.is_file()
+            if (path.is_dir() is False if name == "supernode_auth_private_key_dir" else path.is_file())
         ]
         if missing_files:
             raise DeploymentConfigError(
-                "Production TLS files were not found: " + ", ".join(missing_files)
+                "Production security files/directories were not found: "
+                + ", ".join(missing_files)
             )
 
     return DeploymentConfig(
