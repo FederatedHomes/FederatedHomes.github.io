@@ -89,3 +89,41 @@ def test_production_allows_secure_command_without_insecure_flag() -> None:
         DeploymentProfile.PRODUCTION,
         ["--superlink", "fl.example.internal:9092", "--root-certificates", "/etc/flower/ca.crt"],
     )
+
+
+def test_production_generates_superlink_tls_args(tmp_path: Path) -> None:
+    config = load_deployment_config(production_env(tmp_path))
+
+    assert config.superlink_tls_args() == [
+        "--ssl-ca-certfile", str(tmp_path / "ca.crt"),
+        "--ssl-certfile", str(tmp_path / "superlink.crt"),
+        "--ssl-keyfile", str(tmp_path / "superlink.key"),
+    ]
+
+
+def test_production_generates_supernode_tls_args(tmp_path: Path) -> None:
+    config = load_deployment_config(production_env(tmp_path))
+
+    assert config.supernode_tls_args() == [
+        "--root-certificates", str(tmp_path / "ca.crt")
+    ]
+
+
+def test_development_generates_no_tls_args() -> None:
+    config = load_deployment_config({})
+
+    assert config.superlink_tls_args() == []
+    assert config.supernode_tls_args() == []
+    assert config.cli_tls_config() == {
+        "address": "superlink:9092",
+        "insecure": True,
+    }
+
+
+def test_production_cli_configuration_uses_root_certificates(tmp_path: Path) -> None:
+    config = load_deployment_config(production_env(tmp_path))
+
+    assert config.cli_tls_config() == {
+        "address": "fl.example.internal:9092",
+        "root-certificates": str(tmp_path / "ca.crt"),
+    }
