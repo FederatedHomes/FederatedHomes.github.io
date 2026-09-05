@@ -10,6 +10,10 @@ def test_generate_certificates_builds_ca_and_superlink_certificate(monkeypatch, 
 
     def fake_run_openssl(args: list[str]) -> None:
         commands.append(args)
+        if "-out" in args:
+            output = Path(args[args.index("-out") + 1])
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text("generated", encoding="utf-8")
 
     monkeypatch.setattr(generate_dev_certs, "run_openssl", fake_run_openssl)
 
