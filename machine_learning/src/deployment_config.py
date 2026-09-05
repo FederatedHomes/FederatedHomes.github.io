@@ -109,6 +109,7 @@ PRODUCTION_REQUIRED_ENV = (
     TLS_ROOT_CERTIFICATES_ENV,
     SUPERLINK_CERTIFICATE_ENV,
     SUPERLINK_PRIVATE_KEY_ENV,
+    TLS_CERTIFICATE_HOST_DIR_ENV,
     SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV,
     SUPERNODE_AUTH_HOST_DIR_ENV,
 )
@@ -161,11 +162,6 @@ def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_
         auth_host_dir = paths["supernode_auth_host_dir"]
         if not auth_host_dir.is_dir():
             missing_files.append(f"supernode_auth_host_dir={auth_host_dir}")
-        auth_container_dir = paths["supernode_auth_private_key_dir"]
-        if not auth_container_dir.is_dir() and auth_container_dir != auth_host_dir:
-            # The container path normally does not exist on the deployment host.
-            # Its existence is established by the Docker mount generated later.
-            pass
         if missing_files:
             raise DeploymentConfigError("Production security files/directories were not found: " + ", ".join(missing_files))
 
