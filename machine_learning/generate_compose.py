@@ -71,23 +71,16 @@ def build_compose(
 
     validate_clients(clients)
     profile_value = profile.value if isinstance(profile, DeploymentProfile) else profile
-    environment = {
-        "DEPLOYMENT_PROFILE": profile_value,
-        "SUPERLINK_ADDRESS": os.environ.get("SUPERLINK_ADDRESS", "superlink:9092"),
-        "TLS_ROOT_CERTIFICATES": os.environ.get(
-            "TLS_ROOT_CERTIFICATES", f"{TLS_CONTAINER_DIR}/ca.crt"
-        ),
-        "SUPERLINK_CERTIFICATE": os.environ.get(
-            "SUPERLINK_CERTIFICATE", f"{TLS_CONTAINER_DIR}/superlink.crt"
-        ),
-        "SUPERLINK_PRIVATE_KEY": os.environ.get(
-            "SUPERLINK_PRIVATE_KEY", f"{TLS_CONTAINER_DIR}/superlink.key"
-        ),
-    }
-    config = load_deployment_config(environment)
 
-    if config.is_production and "TLS_CERTIFICATE_HOST_DIR" not in os.environ:
-        os.environ.setdefault("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod")
+    if profile_value == DeploymentProfile.PRODUCTION.value:
+        config = load_deployment_config()
+    else:
+        config = load_deployment_config(
+            {
+                "DEPLOYMENT_PROFILE": DeploymentProfile.DEVELOPMENT.value,
+                "SUPERLINK_ADDRESS": os.environ.get("SUPERLINK_ADDRESS", "superlink:9092"),
+            }
+        )
 
     superlink_command = []
     supernode_prefix = []
