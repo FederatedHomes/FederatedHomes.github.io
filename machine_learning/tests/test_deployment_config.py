@@ -107,10 +107,11 @@ def test_production_generates_superlink_tls_args(tmp_path: Path) -> None:
     ]
 
 
-def test_production_enables_supernode_authentication() -> None:
-    assert load_deployment_config({
-        "DEPLOYMENT_PROFILE": "development",
-    }).superlink_auth_args() == []
+def test_development_disables_supernode_authentication() -> None:
+    config = load_deployment_config({"DEPLOYMENT_PROFILE": "development"})
+
+    assert config.supernode_auth_enabled is False
+    assert config.superlink_auth_args() == []
 
 
 def test_production_generates_superlink_auth_args(tmp_path: Path) -> None:
@@ -128,8 +129,11 @@ def test_production_generates_per_client_supernode_auth_args(tmp_path: Path) -> 
     ]
 
 
-def test_supernode_auth_requires_client_id(tmp_path: Path) -> None:
+def test_supernode_auth_requires_safe_client_id(tmp_path: Path) -> None:
     config = load_deployment_config(production_env(tmp_path))
+
+    with pytest.raises(DeploymentConfigError, match="client ID"):
+        config.supernode_auth_args("../other-node")
 
     with pytest.raises(DeploymentConfigError, match="client ID"):
         config.supernode_auth_args(" ")
