@@ -1,13 +1,30 @@
 # Security and deployment profiles
 
+This project uses explicit deployment profiles so development convenience does not silently weaken the production federation.
+
 ## Deployment profiles
 
 The federated learning application has two explicit deployment profiles:
 
-- `development` — the current local Docker/Compose workflow. This profile may use Flower's `--insecure` transport for local integration testing.
-- `production` — the secure deployment profile. Production requires an explicit SuperLink address and TLS certificate/key paths and rejects `--insecure` for the SuperLink/SuperNode federation transport.
+- `development` — the local Docker/Compose workflow. This profile may use Flower's `--insecure` transport for local integration testing.
+- `production` — the secure deployment profile. Production requires an explicit SuperLink address, TLS certificate/key paths, and SuperNode authentication credentials. Production Fleet commands reject `--insecure`.
 
 The default profile is `development` so existing local workflows remain unchanged.
+
+## Flower network channels
+
+Flower exposes separate APIs on the SuperLink. The current Docker deployment intentionally treats them differently:
+
+| Connection | Port | Flower API | Current security | Purpose |
+|---|---:|---|---|---|
+| SuperExec → SuperLink | 9091 | Runtime | Internal/plaintext | ServerApp execution and Runtime communication |
+| SuperNode → SuperLink | 9092 | Fleet | **TLS + SuperNode authentication in production** | Federated communication |
+| Flower CLI → SuperLink | 9093 | Control | **TLS in production** | Deployment/control operations |
+| SuperExec → SuperNode | 9094 | Runtime | Internal/plaintext | ClientApp execution and Runtime communication |
+
+The `superlink:9092` address therefore refers to the Fleet API used by SuperNodes. The `superlink:9093` address in `.flwr/config.toml` refers to the Control API used by the Flower CLI. These are different APIs on the same SuperLink and are not interchangeable.
+
+The current `--insecure` flags on `superexec-serverapp` and `superexec-clientapp` apply to the separate Runtime/AppIO connections. They do **not** disable TLS or SuperNode authentication on the production Fleet connection. Runtime/AppIO TLS is a separate future hardening step and is intentionally outside the current authentication-layer scope.
 
 ## TLS infrastructure
 
@@ -24,29 +41,19 @@ The SuperLink receives all three files. SuperNodes receive only `ca.crt` and con
 
 For controlled development testing, `scripts/generate_dev_certs.py` can create a local CA and SuperLink certificate. Generated material is stored under `certificates/`, which is ignored by Git. Production certificates must come from the organization's chosen PKI/certificate authority.
 
-The development generator includes SANs for `superlink`, `localhost`, and `127.0.0.1`. If a production SuperLink is addressed through another DNS name or IP address, its production certificate must contain the corresponding SAN.
-
 ## Docker deployment
 
-Production Compose generation is explicit:
+`machine_learning/scripts/generate_compose.py` is the source for the generated Compose deployment. It creates one SuperLink, one SuperNode per configured client, the corresponding SuperExec services, a trainer, and a Docker bridge network.
 
-```bash
-DEPLOYMENT_PROFILE=production \
-SUPERLINK_ADDRESS=fl.example.internal:9092 \
-TLS_ROOT_CERTIFICATES=/etc/flower/tls/ca.crt \
-SUPERLINK_CERTIFICATE=/etc/flower/tls/superlink.crt \
-SUPERLINK_PRIVATE_KEY=/etc/flower/tls/superlink.key \
-TLS_CERTIFICATE_HOST_DIR=/etc/federatedhomes/flower/tls \
-python scripts/generate_compose.py --profile production
-```
+Production Compose generation mounts TLS material read-only and enables SuperNode authentication on the Fleet connection. Each production SuperNode receives only its own authentication private key.
 
-The production generator mounts the host certificate directory read-only and replaces the SuperLink/SuperNode `--insecure` flags with TLS arguments. The Flower CLI used by the trainer also selects the `production-deployment` profile, which supplies the CA certificate.
+The production generator also validates that the generated SuperLink and SuperNode Fleet commands do not contain `--insecure`.
 
-Flower containers use a non-root user, so mounted certificate files must be readable by the container user. On Linux, Flower documents UID `49999` for its containers.
+The Flower trainer selects the named `production-deployment` profile from `.flwr/config.toml`. That name identifies the Flower CLI deployment configuration; it is not a port, client ID, or SuperNode identity.
 
 ## Production configuration
 
-Start from `.env.production.example` and provide deployment-specific values on the target host. Never commit the populated `.env` file, TLS private keys, or runtime state databases.
+Start from `.env.production.example` and provide deployment-specific values on the target host. Never commit the populated `.env` file, TLS private keys, SuperNode private authentication keys, or runtime state databases.
 
 The production validator requires:
 
@@ -55,13 +62,141 @@ The production validator requires:
 - `TLS_ROOT_CERTIFICATES`
 - `SUPERLINK_CERTIFICATE`
 - `SUPERLINK_PRIVATE_KEY`
+- `TLS_CERTIFICATE_HOST_DIR`
+- `SUPERNODE_AUTH_PRIVATE_KEY_DIR`
+- `SUPERNODE_AUTH_HOST_DIR`
 
 ## Secrets handling
 
 Private keys and other runtime credentials belong outside Git. The repository ignores `.env`, certificate/key files, the local `certificates/` tree, and Flower runtime state under `machine_learning/.flwr/`.
 
-Each production service should receive only the credentials it needs. Per-SuperNode authentication keys will be introduced in Step 6.3.
+Each production service should receive only the credentials it needs.
+
+### SuperNode authentication
+
+Production SuperNode authentication is enabled with Flower's `--enable-supernode-auth` option on the SuperLink. Each authorized SuperNode has a unique ECDSA P-384 key pair in SSH/OpenSSH format. The public key is registered with the SuperLink; the corresponding private key remains with that SuperNode.
+
+The repository's development helper can generate local authentication identities:
+
+```bash
+python scripts/generate_supernode_auth.py \
+    --output-dir certificates/dev/auth \
+    client-1 client-2 client-3
+```
+
+This helper is for development and integration testing only. Production identities must be generated and managed through the organization's approved secret-management/PKI process.
+
+For production, the authentication paths are separated into host and container paths:
+
+```text
+Host:
+<auth-host-dir>/
+├── client-1
+├── client-2
+└── client-3
+
+Container:
+/etc/flower/auth/
+├── client-1
+├── client-2
+└── client-3
+```
+
+`SUPERNODE_AUTH_HOST_DIR` identifies the host directory containing the private keys. `SUPERNODE_AUTH_PRIVATE_KEY_DIR` identifies the container directory used by Flower. The Compose generator mounts each SuperNode's key individually and read-only; a SuperNode must never receive the private keys belonging to other clients.
+
+Production configuration requires:
+
+```text
+SUPERNODE_AUTH_PRIVATE_KEY_DIR=/etc/flower/auth
+SUPERNODE_AUTH_HOST_DIR=<host authentication directory>
+```
+
+`setup.sh` validates that the configured authentication directory exists and that every client in `clients.yml` has its own authentication private key before production Compose generation.
+
+### Register authorized SuperNodes
+
+Generating a key pair does not authorize a SuperNode. Register each public key with the configured SuperLink:
+
+```bash
+flwr supernode register \
+    certificates/prod/auth/client-1.pub \
+    production-deployment
+```
+
+Verify the registered identities with:
+
+```bash
+flwr supernode list production-deployment
+```
+
+Only public keys belonging to authorized SuperNodes should be registered.
+
+Flower registration expects an OpenSSH ECDSA public key, such as:
+
+```text
+ecdsa-sha2-nistp384 AAAA...
+```
+
+Do not use a PEM public-key file beginning with `-----BEGIN PUBLIC KEY-----`.
+
+### Validate authentication keys
+
+Private-key material must never be printed or committed. To validate a private key without displaying it:
+
+```bash
+ssh-keygen -y -f certificates/prod/auth/client-1 > /dev/null
+```
+
+Repeat for every configured SuperNode.
+
+To compare public-key fingerprints:
+
+```bash
+for client in client-1 client-2 client-3; do
+    echo "$client:"
+    ssh-keygen -lf "certificates/prod/auth/$client.pub"
+done
+```
+
+Each configured client must have a unique fingerprint.
+
+### Production authentication flow
+
+```text
+SuperNode private key
+        |
+        v
+SuperNode establishes TLS to SuperLink
+        |
+        v
+SuperNode authentication
+        |
+   +----+----+
+   |         |
+accepted   rejected
+   |         |
+   v         v
+federated   no access
+training
+```
+
+TLS protects the Fleet transport and verifies the SuperLink using the configured CA. SuperNode authentication separately determines whether the connecting SuperNode identity is authorized.
+
+An authorized SuperNode must connect successfully, while an unregistered SuperNode using a different key must be rejected. This is the remaining end-to-end validation for Step 6.3.
+
+### Key rotation and revocation
+
+If a SuperNode authentication private key is compromised:
+
+1. Stop the affected SuperNode.
+2. Unregister/revoke its old public-key identity from the SuperLink.
+3. Generate a new unique key pair through the approved credential-management process.
+4. Distribute only the new private key to the affected SuperNode.
+5. Register the new public key.
+6. Verify the new identity before resuming training.
+
+Do not replace a registered key without considering the impact on the existing Node ID and authorization state.
 
 ## Scope boundary
 
-Step 6.2 establishes TLS for the SuperLink ↔ SuperNode federation transport and the Flower CLI connection used by the deployment runtime. Internal Runtime API TLS (`--appio-ssl-*`) requires separate per-service certificate/SAN handling and is intentionally kept as a distinct hardening item rather than sharing the SuperLink private key across services. SuperNode authentication is implemented in Step 6.3.
+Step 6.2 establishes TLS for the SuperLink ↔ SuperNode Fleet transport and the Flower CLI connection used by the deployment runtime. Step 6.3 adds SuperNode authentication to that TLS-protected Fleet connection. Internal Runtime/AppIO TLS (`--appio-ssl-*`) requires separate per-service certificate/SAN handling and is intentionally kept as a distinct future hardening item rather than sharing the SuperLink private key across services.

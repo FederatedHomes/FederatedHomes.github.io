@@ -5,6 +5,7 @@
 *.p12
 *.pfx
 certificates/
+tmp/
 
 # Runtime state and local credentials
 *.db
