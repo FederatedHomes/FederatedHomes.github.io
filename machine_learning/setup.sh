@@ -85,7 +85,7 @@ PY
   done
   if [ "$missing" -eq 1 ]; then
     echo "Generating development-only SuperNode identities in $auth_dir"
-    python3 scripts/generate_supernode_auth.py --output-dir "$auth_dir" --clients "${client_ids[@]}"
+    python3 scripts/generate_supernode_auth.py --output-dir "$auth_dir" "${client_ids[@]}"
   else
     echo "Development SuperNode identities already exist in $auth_dir"
   fi
