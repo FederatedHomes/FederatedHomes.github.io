@@ -40,6 +40,52 @@
             gap: 20px;
             margin-bottom: 60px;
             padding: 40px;
+            isolation: isolate;
+        }
+
+        .visualization-connector {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        .visualization-connector .hub-connector {
+            fill: none;
+            stroke: rgba(73, 2, 138, 0.68);
+            stroke-width: 4;
+            stroke-linecap: round;
+            filter: drop-shadow(0 0 10px rgba(73, 2, 138, 0.28));
+        }
+
+        .hub-service-flow {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        .hub-service-flow .hub-service-trunk,
+        .hub-service-flow .hub-service-branch {
+            fill: none;
+            stroke: rgba(73, 2, 138, 0.28);
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-dasharray: none;
+            filter: drop-shadow(0 0 8px rgba(73, 2, 138, 0.10));
+        }
+
+        .hub-service-flow .hub-service-pulse {
+            fill: rgba(73, 2, 138, 0.9);
+            filter: drop-shadow(0 0 8px rgba(73, 2, 138, 0.55));
         }
 
         .community-container,
@@ -54,6 +100,12 @@
             min-width: 0;
             padding: 30px 20px;
             border-radius: 20px;
+            z-index: 1;
+        }
+
+        .service {
+            position: relative;
+            z-index: 2;
         }
 
         .community-container { background: var(--purple-soft); }
@@ -93,6 +145,10 @@
             align-items: center;
         }
 
+        .client {
+            gap: 8px;
+        }
+
         .client-icon {
             width: 90px;
             height: 90px;
@@ -106,10 +162,27 @@
             color: var(--white);
             font-size: 2.2rem;
             animation: pulse 2s ease-in-out infinite;
+            padding: 8px 10px;
+            flex-direction: column;
+            gap: 4px;
         }
 
         .client-icon i { animation: float 3s ease-in-out infinite; }
-        .client-label, .service-label { margin-top: 12px; color: var(--black); font-size: 0.85rem; font-weight: 600; text-align: center; }
+        .client-label {
+            width: 100%;
+            color: var(--white);
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 0.04em;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            z-index: 2;
+            white-space: nowrap;
+            line-height: 1.2;
+            position: relative;
+            margin: 0;
+        }
+        .service-label { margin-top: 12px; color: var(--black); font-size: 0.85rem; font-weight: 600; text-align: center; }
         .service-label { max-width: 125px; line-height: 1.3; }
 
         .data-sources {
@@ -117,7 +190,7 @@
             gap: 10px;
             margin-top: 8px;
             position: relative;
-            z-index: 4;
+            z-index: 3;
         }
 
         .data-source {
@@ -132,7 +205,7 @@
             color: var(--purple);
             font-size: 0.8rem;
             position: relative;
-            z-index: 4;
+            z-index: 3;
         }
 
         /* Client 1 local data-generation visualization. */
@@ -142,21 +215,22 @@
             inset: 0;
             width: 100%;
             height: 100%;
-            z-index: 3;
+            z-index: 1;
             overflow: visible;
             pointer-events: none;
         }
 
         .client-data-flow .data-line {
             fill: none;
-            stroke: rgba(73, 2, 138, 0.48);
-            stroke-width: 1;
+            stroke: rgba(73, 2, 138, 0.9);
+            stroke-width: 2.5;
             stroke-linecap: round;
+            filter: drop-shadow(0 0 6px rgba(73, 2, 138, 0.22));
         }
 
         .client-data-flow .data-pulse {
-            fill: rgba(73, 2, 138, 0.72);
-            filter: drop-shadow(0 0 4px rgba(73, 2, 138, 0.45));
+            fill: rgba(73, 2, 138, 0.9);
+            filter: drop-shadow(0 0 8px rgba(73, 2, 138, 0.45));
         }
 
         .federation-hub {
@@ -342,12 +416,24 @@
         </header>
 
         <main class="visualization" id="visualization">
+            <svg class="visualization-connector" aria-hidden="true" preserveAspectRatio="none">
+                <path class="hub-connector"></path>
+            </svg>
+            <svg class="hub-service-flow" aria-hidden="true" preserveAspectRatio="none">
+                <path class="hub-service-trunk"></path>
+                <path class="hub-service-branch"></path>
+                <path class="hub-service-branch"></path>
+                <path class="hub-service-branch"></path>
+                <circle class="hub-service-pulse" r="5"></circle>
+            </svg>
             <div class="community-container">
                 <div class="community-label"><i class="fas fa-users"></i> Community</div>
                 <div class="clients-section">
                     <article class="client" data-client="1">
-                        <div class="client-icon"><i class="fas fa-home"></i></div>
-                        <div class="client-label">Client 1</div>
+                        <div class="client-icon">
+                            <div class="client-label">Client 1</div>
+                            <i class="fas fa-home"></i>
+                        </div>
                         <div class="data-sources" aria-label="Client 1 data sources">
                             <div class="data-source" data-source="electricity" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
                             <div class="data-source" data-source="water" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
@@ -361,21 +447,37 @@
                     </article>
 
                     <article class="client" data-client="2">
-                        <div class="client-icon"><i class="fas fa-home"></i></div>
-                        <div class="client-label">Client 2</div>
-                        <div class="data-sources" aria-label="Client 2 data sources">
-                            <div class="data-source" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
-                            <div class="data-source" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                        <div class="client-icon">
+                            <div class="client-label">Client 2</div>
+                            <i class="fas fa-home"></i>
                         </div>
+                        <div class="data-sources" aria-label="Client 2 data sources">
+                            <div class="data-source" data-source="electricity" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
+                            <div class="data-source" data-source="water" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                        </div>
+                        <svg class="client-data-flow" aria-hidden="true" preserveAspectRatio="none">
+                            <path class="data-line data-line-main"></path>
+                            <path class="data-line data-line-electricity"></path>
+                            <path class="data-line data-line-water"></path>
+                            <circle class="data-pulse" r="5"></circle>
+                        </svg>
                     </article>
 
                     <article class="client" data-client="3">
-                        <div class="client-icon"><i class="fas fa-home"></i></div>
-                        <div class="client-label">Client 3</div>
-                        <div class="data-sources" aria-label="Client 3 data sources">
-                            <div class="data-source" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
-                            <div class="data-source" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                        <div class="client-icon">
+                            <div class="client-label">Client 3</div>
+                            <i class="fas fa-home"></i>
                         </div>
+                        <div class="data-sources" aria-label="Client 3 data sources">
+                            <div class="data-source" data-source="electricity" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
+                            <div class="data-source" data-source="water" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                        </div>
+                        <svg class="client-data-flow" aria-hidden="true" preserveAspectRatio="none">
+                            <path class="data-line data-line-main"></path>
+                            <path class="data-line data-line-electricity"></path>
+                            <path class="data-line data-line-water"></path>
+                            <circle class="data-pulse" r="5"></circle>
+                        </svg>
                     </article>
                 </div>
             </div>
@@ -427,8 +529,80 @@
 
     <script>
         const visualization = document.getElementById('visualization');
+        const communityContainer = document.querySelector('.community-container');
+        const servicesContainer = document.querySelector('.services-container');
+        const federationHub = document.querySelector('.federation-hub');
+        const hubConnector = document.querySelector('.hub-connector');
+        const hubServiceFlow = document.querySelector('.hub-service-flow');
+        const hubServiceTrunk = document.querySelector('.hub-service-trunk');
+        const hubServiceBranches = [...document.querySelectorAll('.hub-service-branch')];
+        const hubServicePulse = document.querySelector('.hub-service-pulse');
         const hubIcon = document.querySelector('.hub-icon');
         let activeRequest = false;
+
+        function resolveServiceBranchPoint() {
+            if (!servicesContainer || !visualization || !hubIcon) return null;
+            const servicesRect = servicesContainer.getBoundingClientRect();
+            const visualRect = visualization.getBoundingClientRect();
+            const hubRect = hubIcon.getBoundingClientRect();
+            return {
+                x: servicesRect.left - visualRect.left + servicesRect.width * 0.05,
+                y: hubRect.top + hubRect.height / 2 - visualRect.top
+            };
+        }
+
+        function updateVisualizationConnector() {
+            if (!hubConnector || !communityContainer || !federationHub || !hubIcon) return;
+
+            const visualRect = visualization.getBoundingClientRect();
+            const communityRect = communityContainer.getBoundingClientRect();
+            const hubRect = hubIcon.getBoundingClientRect();
+            const startX = communityRect.right - visualRect.left;
+            const endX = hubRect.left - visualRect.left + 10;
+            const centerY = hubRect.top + hubRect.height / 2 - visualRect.top;
+
+            hubConnector.setAttribute('d', `M ${startX} ${centerY} L ${endX} ${centerY}`);
+        }
+
+        function pointOnElement(element, parentRect) {
+            const rect = element.getBoundingClientRect();
+            return {
+                x: rect.left + rect.width / 2 - parentRect.left,
+                y: rect.top + rect.height / 2 - parentRect.top
+            };
+        }
+
+        function updateHubServiceFlow() {
+            if (!hubServiceFlow || !hubServiceTrunk || !hubIcon || !servicesContainer || !hubServicePulse) return;
+
+            const flowRect = hubServiceFlow.getBoundingClientRect();
+            const hubRect = hubIcon.getBoundingClientRect();
+            const visualRect = visualization.getBoundingClientRect();
+            const hubPoint = {
+                x: hubRect.left + hubRect.width / 2 - flowRect.left,
+                y: hubRect.top + hubRect.height / 2 - flowRect.top
+            };
+            const branchPoint = resolveServiceBranchPoint();
+            if (!branchPoint) return;
+
+            hubServiceTrunk.setAttribute('d', `M ${hubPoint.x} ${hubPoint.y} L ${branchPoint.x} ${branchPoint.y}`);
+
+            const serviceIcons = [...document.querySelectorAll('.service-icon')];
+            serviceIcons.forEach((icon, index) => {
+                const branch = hubServiceBranches[index];
+                if (!branch) return;
+                const target = pointOnElement(icon, flowRect);
+                const bend = Math.max(18, (target.x - branchPoint.x) * 0.28);
+                branch.setAttribute(
+                    'd',
+                    `M ${branchPoint.x} ${branchPoint.y} C ${branchPoint.x + bend} ${branchPoint.y}, ${target.x - bend} ${target.y}, ${target.x} ${target.y}`
+                );
+            });
+
+            hubServicePulse.setAttribute('cx', hubPoint.x);
+            hubServicePulse.setAttribute('cy', hubPoint.y);
+            hubServicePulse.style.opacity = '0';
+        }
 
         function makeSvgElement(tag, attributes) {
             const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -440,50 +614,71 @@
             if (activeRequest || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             activeRequest = true;
 
-            const icons = [...document.querySelectorAll('.service-icon')];
-            const targetIcon = icons[Math.floor(Math.random() * icons.length)];
-            const dot = document.createElement('span');
-            dot.className = 'request-dot';
-            dot.setAttribute('aria-hidden', 'true');
-            targetIcon.appendChild(dot);
-
-            const visualRect = visualization.getBoundingClientRect();
-            const hubRect = hubIcon.getBoundingClientRect();
-            const dotRect = dot.getBoundingClientRect();
-            const startX = hubRect.left + hubRect.width / 2 - visualRect.left;
-            const startY = hubRect.top + hubRect.height / 2 - visualRect.top;
-            const endX = dotRect.left + dotRect.width / 2 - visualRect.left;
-            const endY = dotRect.top + dotRect.height / 2 - visualRect.top;
-            const bend = Math.max(36, Math.abs(endX - startX) * 0.32);
-
-            const svg = makeSvgElement('svg', {
-                class: 'request-link-layer',
-                viewBox: `0 0 ${visualRect.width} ${visualRect.height}`,
-                preserveAspectRatio: 'none',
-                'aria-hidden': 'true'
-            });
-            const path = makeSvgElement('path', {
-                class: 'request-link',
-                d: `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`
-            });
-            svg.appendChild(path);
-            visualization.appendChild(svg);
-
-            window.setTimeout(() => {
-                svg.remove();
-                dot.remove();
+            if (!hubServiceFlow || !hubServicePulse || !hubIcon || !servicesContainer) {
                 activeRequest = false;
-            }, 2800);
+                return;
+            }
+
+            const flowRect = hubServiceFlow.getBoundingClientRect();
+            const hubRect = hubIcon.getBoundingClientRect();
+            const serviceIcons = [...document.querySelectorAll('.service-icon')];
+            const targetIcon = serviceIcons[Math.floor(Math.random() * serviceIcons.length)];
+            const targetPoint = pointOnElement(targetIcon, flowRect);
+            const branchPoint = resolveServiceBranchPoint();
+            if (!branchPoint) return;
+
+            const hubPoint = {
+                x: hubRect.left + hubRect.width / 2 - flowRect.left,
+                y: hubRect.top + hubRect.height / 2 - flowRect.top
+            };
+            const route = [hubPoint, branchPoint, targetPoint];
+            const lengths = [];
+            for (let i = 0; i < route.length - 1; i++) {
+                lengths.push(Math.hypot(route[i + 1].x - route[i].x, route[i + 1].y - route[i].y));
+            }
+            const totalLength = lengths.reduce((sum, len) => sum + len, 0);
+            const duration = 2000;
+            const start = performance.now();
+
+            function step(timestamp) {
+                const elapsed = timestamp - start;
+                const progress = Math.min(elapsed / duration, 1);
+                const travelled = progress * totalLength;
+                let accum = 0;
+                let current = route[0];
+
+                for (let i = 0; i < lengths.length; i++) {
+                    const segment = lengths[i];
+                    if (travelled <= accum + segment) {
+                        const local = (travelled - accum) / segment;
+                        const next = route[i + 1];
+                        current = {
+                            x: route[i].x + (next.x - route[i].x) * local,
+                            y: route[i].y + (next.y - route[i].y) * local
+                        };
+                        break;
+                    }
+                    accum += segment;
+                    current = route[i + 1];
+                }
+
+                hubServicePulse.setAttribute('cx', current.x);
+                hubServicePulse.setAttribute('cy', current.y);
+                hubServicePulse.style.opacity = progress < 0.96 ? '1' : String(Math.max(0, (1 - progress) / 0.04));
+                hubServicePulse.setAttribute('r', String(4.5 + Math.sin(progress * Math.PI) * 1.5));
+
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                } else {
+                    hubServicePulse.style.opacity = '0';
+                    activeRequest = false;
+                }
+            }
+
+            window.requestAnimationFrame(step);
         }
 
-        const clientOne = document.querySelector('.client[data-client="1"]');
-        const clientOneIcon = clientOne.querySelector('.client-icon');
-        const clientOneSources = [...clientOne.querySelectorAll('.data-source')];
-        const clientOneFlow = clientOne.querySelector('.client-data-flow');
-        const clientOnePulse = clientOne.querySelector('.data-pulse');
-        const clientOneMainLine = clientOne.querySelector('.data-line-main');
-        const clientOneElectricityLine = clientOne.querySelector('.data-line-electricity');
-        const clientOneWaterLine = clientOne.querySelector('.data-line-water');
+        const clients = [...document.querySelectorAll('.client')];
 
         function pointInFlow(element, flowRect) {
             const rect = element.getBoundingClientRect();
@@ -493,31 +688,55 @@
             };
         }
 
-        function setClientOneFlowGeometry() {
-            if (!clientOneFlow || !clientOneSources.length) return null;
+        function setClientFlowGeometry(client) {
+            const icon = client.querySelector('.client-icon');
+            const sources = [...client.querySelectorAll('.data-source')];
+            const flow = client.querySelector('.client-data-flow');
+            const pulse = client.querySelector('.data-pulse');
+            const mainLine = client.querySelector('.data-line-main');
+            const electricityLine = client.querySelector('.data-line-electricity');
+            const waterLine = client.querySelector('.data-line-water');
 
-            const flowRect = clientOneFlow.getBoundingClientRect();
-            const clientPoint = pointInFlow(clientOneIcon, flowRect);
-            const electricityPoint = pointInFlow(clientOneSources.find(source => source.dataset.source === 'electricity'), flowRect);
-            const waterPoint = pointInFlow(clientOneSources.find(source => source.dataset.source === 'water'), flowRect);
+            if (!flow || !sources.length || !icon || !mainLine || !electricityLine || !waterLine) return null;
+
+            const flowRect = flow.getBoundingClientRect();
+            const clientPoint = pointInFlow(icon, flowRect);
+            const electricityPoint = pointInFlow(sources.find(source => source.dataset.source === 'electricity'), flowRect);
+            const waterPoint = pointInFlow(sources.find(source => source.dataset.source === 'water'), flowRect);
             const junctionY = Math.min(electricityPoint.y, waterPoint.y) - 13;
             const junction = { x: clientPoint.x, y: junctionY };
 
-            clientOneFlow.setAttribute('viewBox', `0 0 ${flowRect.width} ${flowRect.height}`);
-            clientOneMainLine.setAttribute('d', `M ${clientPoint.x} ${clientPoint.y} L ${junction.x} ${junction.y}`);
-            clientOneElectricityLine.setAttribute('d', `M ${electricityPoint.x} ${electricityPoint.y} L ${junction.x} ${junction.y}`);
-            clientOneWaterLine.setAttribute('d', `M ${waterPoint.x} ${waterPoint.y} L ${junction.x} ${junction.y}`);
+            flow.setAttribute('viewBox', `0 0 ${flowRect.width} ${flowRect.height}`);
+            mainLine.setAttribute('d', `M ${clientPoint.x} ${clientPoint.y} L ${junction.x} ${junction.y}`);
+            electricityLine.setAttribute('d', `M ${electricityPoint.x} ${electricityPoint.y} L ${junction.x} ${junction.y}`);
+            waterLine.setAttribute('d', `M ${waterPoint.x} ${waterPoint.y} L ${junction.x} ${junction.y}`);
+
+            if (pulse) {
+                pulse.setAttribute('cx', clientPoint.x);
+                pulse.setAttribute('cy', clientPoint.y);
+                pulse.style.opacity = '0';
+            }
 
             return { clientPoint, electricityPoint, waterPoint, junction };
         }
 
-        function animateClientOneData() {
+        function animateClientData(client) {
             if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-            const geometry = setClientOneFlowGeometry();
+            const icon = client.querySelector('.client-icon');
+            const sources = [...client.querySelectorAll('.data-source')];
+            const flow = client.querySelector('.client-data-flow');
+            const pulse = client.querySelector('.data-pulse');
+            const mainLine = client.querySelector('.data-line-main');
+            const electricityLine = client.querySelector('.data-line-electricity');
+            const waterLine = client.querySelector('.data-line-water');
+
+            if (!flow || !sources.length || !icon || !pulse || !mainLine || !electricityLine || !waterLine) return;
+
+            const geometry = setClientFlowGeometry(client);
             if (!geometry) return;
 
-            const source = clientOneSources[Math.floor(Math.random() * clientOneSources.length)];
+            const source = sources[Math.floor(Math.random() * sources.length)];
             const sourcePoint = source.dataset.source === 'electricity'
                 ? geometry.electricityPoint
                 : geometry.waterPoint;
@@ -534,10 +753,10 @@
             const sourceRatio = sourceToJunction / totalLength;
             const duration = 1800;
 
-            clientOnePulse.setAttribute('cx', sourcePoint.x);
-            clientOnePulse.setAttribute('cy', sourcePoint.y);
-            clientOnePulse.setAttribute('r', '5');
-            clientOnePulse.style.opacity = '0';
+            pulse.setAttribute('cx', sourcePoint.x);
+            pulse.setAttribute('cy', sourcePoint.y);
+            pulse.setAttribute('r', '5');
+            pulse.style.opacity = '0';
 
             let startTime = null;
             function step(timestamp) {
@@ -562,25 +781,37 @@
                     };
                 }
 
-                clientOnePulse.setAttribute('cx', point.x);
-                clientOnePulse.setAttribute('cy', point.y);
-                clientOnePulse.style.opacity = progress < 0.94 ? '1' : String(Math.max(0, (1 - progress) / 0.06));
-                clientOnePulse.setAttribute('r', String(4.5 + Math.sin(progress * Math.PI) * 1.5));
+                pulse.setAttribute('cx', point.x);
+                pulse.setAttribute('cy', point.y);
+                pulse.style.opacity = progress < 0.94 ? '1' : String(Math.max(0, (1 - progress) / 0.06));
+                pulse.setAttribute('r', String(4.5 + Math.sin(progress * Math.PI) * 1.5));
 
                 if (progress < 1) {
                     window.requestAnimationFrame(step);
                 } else {
-                    clientOnePulse.style.opacity = '0';
+                    pulse.style.opacity = '0';
                 }
             }
 
             window.requestAnimationFrame(step);
         }
 
-        setClientOneFlowGeometry();
-        window.setTimeout(animateClientOneData, 900);
-        window.setInterval(animateClientOneData, 3600);
-        window.addEventListener('resize', setClientOneFlowGeometry);
+        clients.forEach((client, index) => {
+            setClientFlowGeometry(client);
+            const initialDelay = 900 + index * 400 + Math.random() * 350;
+            const intervalMs = 3600 + index * 500 + Math.random() * 600;
+            window.setTimeout(() => animateClientData(client), initialDelay);
+            window.setInterval(() => animateClientData(client), intervalMs);
+        });
+
+        window.addEventListener('resize', () => {
+            clients.forEach(setClientFlowGeometry);
+            updateVisualizationConnector();
+            updateHubServiceFlow();
+        });
+
+        updateVisualizationConnector();
+        updateHubServiceFlow();
 
         window.setTimeout(requestPrediction, 1200);
         window.setInterval(requestPrediction, 5200);
