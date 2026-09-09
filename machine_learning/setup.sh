@@ -303,12 +303,20 @@ generate_client_compose() {
 
 start_server_federation() {
   generate_server_compose
+  echo "Building the client-registration image from the current source..."
+  docker compose -f docker-compose.server.yml build --no-cache client-registration
   echo "Starting server infrastructure..."
   docker compose -f docker-compose.server.yml up -d --build superlink superexec-serverapp
   if [ "${DEPLOYMENT_PROFILE:-development}" = production ]; then
     register_configured_clients
   fi
   echo "Server infrastructure is running."
+}
+
+start_client_federation() {
+  generate_client_compose
+  echo "Starting client infrastructure..."
+  docker compose -f docker-compose.client.yml up --build
 }
 
 run_tests() {
@@ -350,13 +358,14 @@ main_menu() {
     echo "  2) Generate server Compose"
     echo "  3) Generate client Compose"
     echo "  4) Start server infrastructure"
-    echo "  5) Run tests"
-    echo "  6) Show configuration"
-    echo "  7) Start local all-in-one development federation"
-    echo "  8) Exit"
-    read -rp "Select an option [1-8]: " option
+    echo "  5) Start client infrastructure"
+    echo "  6) Run tests"
+    echo "  7) Show configuration"
+    echo "  8) Start local all-in-one development federation"
+    echo "  9) Exit"
+    read -rp "Select an option [1-9]: " option
     case "$option" in
-      1) prepare_host ;; 2) generate_server_compose ;; 3) generate_client_compose ;; 4) start_server_federation ;; 5) run_tests ;; 6) show_config ;; 7) run_local_development_compose ;; 8) exit 0 ;; *) echo "ERROR: Invalid option. Please choose 1-8." >&2 ;;
+      1) prepare_host ;; 2) generate_server_compose ;; 3) generate_client_compose ;; 4) start_server_federation ;; 5) start_client_federation ;; 6) run_tests ;; 7) show_config ;; 8) run_local_development_compose ;; 9) exit 0 ;; *) echo "ERROR: Invalid option. Please choose 1-9." >&2 ;;
     esac
   done
 }
