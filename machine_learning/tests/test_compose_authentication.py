@@ -16,7 +16,7 @@ def production_env(tmp_path: Path, monkeypatch) -> None:
     for client_id in ("client-1", "client-2"):
         (auth_dir / client_id).write_text("private", encoding="utf-8")
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
-    monkeypatch.setenv("SUPERLINK_ADDRESS", "fl.example.internal:9092")
+    monkeypatch.setenv("SUPERLINK_HOST", "fl.example.internal")
     monkeypatch.setenv("TLS_ROOT_CERTIFICATES", "/etc/flower/tls/ca.crt")
     monkeypatch.setenv("SUPERLINK_CERTIFICATE", "/etc/flower/tls/superlink.crt")
     monkeypatch.setenv("SUPERLINK_PRIVATE_KEY", "/etc/flower/tls/superlink.key")
@@ -32,6 +32,12 @@ def clients() -> list[dict]:
         {"id": "client-1", "data_dir": "./data/client-1", "checkpoint_dir": "./checkpoints/client-1"},
         {"id": "client-2", "data_dir": "./data/client-2", "checkpoint_dir": "./checkpoints/client-2"},
     ]
+
+
+def test_superlink_addresses_are_derived_from_one_host(monkeypatch, tmp_path: Path) -> None:
+    production_env(tmp_path, monkeypatch)
+    compose = build_compose(clients(), profile="production")
+    assert compose["services"]["supernode-client-1"]["command"][1:3] == ["--superlink", "fl.example.internal:9092"]
 
 
 def test_production_superlink_enables_supernode_authentication(monkeypatch, tmp_path: Path) -> None:
@@ -92,6 +98,6 @@ def test_server_role_contains_only_server_infrastructure(monkeypatch, tmp_path: 
 
 def test_all_role_retains_trainer_for_local_development(monkeypatch) -> None:
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "development")
-    monkeypatch.setenv("SUPERLINK_ADDRESS", "superlink:9092")
+    monkeypatch.delenv("SUPERLINK_HOST", raising=False)
     compose = build_compose(clients(), profile="development", role="all")
     assert "trainer" in compose["services"]
