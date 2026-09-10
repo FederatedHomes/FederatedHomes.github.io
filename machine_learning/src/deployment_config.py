@@ -21,11 +21,19 @@ class DeploymentProfile(str, Enum):
     PRODUCTION = "production"
 
 
+# Flower's public SuperLink endpoints are framework-owned. Only the host is
+# user-configurable so Fleet/Control addresses cannot drift apart.
+SUPERLINK_FLEET_PORT = 9092
+SUPERLINK_CONTROL_PORT = 9093
+SUPERLINK_RUNTIME_PORT = 9091
+
+
 @dataclass(frozen=True)
 class DeploymentConfig:
     """Resolved deployment configuration."""
 
     profile: DeploymentProfile
+    superlink_host: str
     superlink_address: str
     superlink_control_address: str
     tls_root_certificates: Path | None = None
@@ -91,13 +99,12 @@ class DeploymentConfig:
     def cli_tls_config(self) -> dict[str, str | bool]:
         if self.is_production:
             assert self.tls_root_certificates is not None
-            return {"address": self.superlink_address, "root-certificates": str(self.tls_root_certificates)}
-        return {"address": self.superlink_address, "insecure": True}
+            return {"address": self.superlink_control_address, "root-certificates": str(self.tls_root_certificates)}
+        return {"address": self.superlink_control_address, "insecure": True}
 
 
 PROFILE_ENV = "DEPLOYMENT_PROFILE"
-SUPERLINK_ADDRESS_ENV = "SUPERLINK_ADDRESS"
-SUPERLINK_CONTROL_ADDRESS_ENV = "SUPERLINK_CONTROL_ADDRESS"
+SUPERLINK_HOST_ENV = "SUPERLINK_HOST"
 TLS_ROOT_CERTIFICATES_ENV = "TLS_ROOT_CERTIFICATES"
 SUPERLINK_CERTIFICATE_ENV = "SUPERLINK_CERTIFICATE"
 SUPERLINK_PRIVATE_KEY_ENV = "SUPERLINK_PRIVATE_KEY"
@@ -108,9 +115,10 @@ SUPERLINK_STATE_HOST_DIR_ENV = "SUPERLINK_STATE_HOST_DIR"
 SUPERLINK_STATE_DIR_ENV = "SUPERLINK_STATE_DIR"
 DEPLOYMENT_ROLE_ENV = "DEPLOYMENT_ROLE"
 
-SERVER_REQUIRED_ENV = (SUPERLINK_ADDRESS_ENV, TLS_ROOT_CERTIFICATES_ENV, SUPERLINK_CERTIFICATE_ENV, SUPERLINK_PRIVATE_KEY_ENV, TLS_CERTIFICATE_HOST_DIR_ENV, SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV, SUPERNODE_AUTH_HOST_DIR_ENV, SUPERLINK_STATE_HOST_DIR_ENV, SUPERLINK_STATE_DIR_ENV)
-CLIENT_REQUIRED_ENV = (SUPERLINK_ADDRESS_ENV, TLS_ROOT_CERTIFICATES_ENV, TLS_CERTIFICATE_HOST_DIR_ENV, SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV, SUPERNODE_AUTH_HOST_DIR_ENV)
+SERVER_REQUIRED_ENV = (SUPERLINK_HOST_ENV, TLS_ROOT_CERTIFICATES_ENV, SUPERLINK_CERTIFICATE_ENV, SUPERLINK_PRIVATE_KEY_ENV, TLS_CERTIFICATE_HOST_DIR_ENV, SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV, SUPERNODE_AUTH_HOST_DIR_ENV, SUPERLINK_STATE_HOST_DIR_ENV, SUPERLINK_STATE_DIR_ENV)
+CLIENT_REQUIRED_ENV = (SUPERLINK_HOST_ENV, TLS_ROOT_CERTIFICATES_ENV, TLS_CERTIFICATE_HOST_DIR_ENV, SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV, SUPERNODE_AUTH_HOST_DIR_ENV)
 _SAFE_CLIENT_ID = re.compile(r"[A-Za-z0-9._-]+")
+_HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*$|^[0-9a-fA-F:]+$")
 
 
 def _profile_from_value(value: str | None) -> DeploymentProfile:
@@ -122,19 +130,21 @@ def _profile_from_value(value: str | None) -> DeploymentProfile:
         raise DeploymentConfigError(f"{PROFILE_ENV} must be one of: {allowed}; got '{normalized}'.") from exc
 
 
-def _derive_control_address(fleet_address: str) -> str:
-    host, separator, port = fleet_address.rpartition(":")
-    if separator and port.isdigit() and int(port) == 9092:
-        return f"{host}:9093"
-    if separator:
-        return f"{host}:9093"
-    return f"{fleet_address}:9093"
+def _normalize_host(value: str) -> str:
+    host = value.strip()
+    if not host:
+        raise DeploymentConfigError(f"{SUPERLINK_HOST_ENV} must be set to the SuperLink hostname or IP address.")
+    # IPv6 literals may be supplied in bracketed URL form; Flower addresses
+    # below will use the bracketed form to remain unambiguous with the port.
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if not _HOST_RE.fullmatch(host):
+        raise DeploymentConfigError(f"{SUPERLINK_HOST_ENV} contains an invalid hostname or IP address: '{host}'.")
+    return host
 
 
-def validate_no_insecure_flag(profile: DeploymentProfile | str, command: Sequence[str]) -> None:
-    resolved_profile = profile if isinstance(profile, DeploymentProfile) else _profile_from_value(profile)
-    if resolved_profile is DeploymentProfile.PRODUCTION and "--insecure" in command:
-        raise DeploymentConfigError("Production deployment must not use Flower's --insecure flag. Configure TLS before starting the production federation.")
+def _endpoint(host: str, port: int) -> str:
+    return f"[{host}]:{port}" if ":" in host and not host.startswith("[") else f"{host}:{port}"
 
 
 def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_files: bool = False, role: str | None = None) -> DeploymentConfig:
@@ -143,10 +153,14 @@ def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_
     if resolved_role not in {"server", "client", "all"}:
         raise DeploymentConfigError("Deployment role must be one of: server, client, all.")
     profile = _profile_from_value(env.get(PROFILE_ENV))
-    superlink_address = env.get(SUPERLINK_ADDRESS_ENV, "").strip() or "superlink:9092"
-    control_address = env.get(SUPERLINK_CONTROL_ADDRESS_ENV, "").strip() or _derive_control_address(superlink_address)
+    host_value = env.get(SUPERLINK_HOST_ENV, "").strip()
+    if not host_value and profile is DeploymentProfile.DEVELOPMENT:
+        host_value = "superlink"
+    superlink_host = _normalize_host(host_value)
+    superlink_address = _endpoint(superlink_host, SUPERLINK_FLEET_PORT)
+    control_address = _endpoint(superlink_host, SUPERLINK_CONTROL_PORT)
     if profile is DeploymentProfile.DEVELOPMENT:
-        return DeploymentConfig(profile=profile, superlink_address=superlink_address, superlink_control_address=control_address)
+        return DeploymentConfig(profile=profile, superlink_host=superlink_host, superlink_address=superlink_address, superlink_control_address=control_address)
 
     required_env = CLIENT_REQUIRED_ENV if resolved_role == "client" else SERVER_REQUIRED_ENV
     missing = [name for name in required_env if not env.get(name, "").strip()]
@@ -181,7 +195,13 @@ def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_
                 missing_files.append(f"superlink_state_host_dir={state_host_dir}")
         if missing_files:
             raise DeploymentConfigError("Production security files/directories were not found: " + ", ".join(missing_files))
-    return DeploymentConfig(profile=profile, superlink_address=superlink_address, superlink_control_address=control_address, **paths)
+    return DeploymentConfig(profile=profile, superlink_host=superlink_host, superlink_address=superlink_address, superlink_control_address=control_address, **paths)
+
+
+def validate_no_insecure_flag(profile: DeploymentProfile | str, command: Sequence[str]) -> None:
+    resolved_profile = profile if isinstance(profile, DeploymentProfile) else _profile_from_value(profile)
+    if resolved_profile is DeploymentProfile.PRODUCTION and "--insecure" in command:
+        raise DeploymentConfigError("Production deployment must not use Flower's --insecure flag. Configure TLS before starting the production federation.")
 
 
 def validate_environment(environ: Mapping[str, str] | None = None, *, require_files: bool = False, role: str | None = None) -> DeploymentConfig:
