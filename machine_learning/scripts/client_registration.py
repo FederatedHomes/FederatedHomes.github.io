@@ -16,7 +16,6 @@ PUBLIC_KEY_DIR = Path(os.environ.get("PUBLIC_KEY_DIR", "/app/certificates/prod/a
 PROFILE = os.environ.get("FLOWER_PROFILE", "production-deployment")
 FLOWER_CONFIG_DIR = Path(os.environ.get("FLOWER_CONFIG_DIR", "/app/.flwr"))
 FLOWER_HOME = Path(os.environ.get("FLOWER_HOME", "/tmp/flower-cli-home"))
-SUPERLINK_CONTROL_ADDRESS = os.environ.get("SUPERLINK_CONTROL_ADDRESS", "").strip()
 MIN_CLIENTS = 2
 ALREADY_REGISTERED_MESSAGE = "Public key already in use"
 
@@ -99,33 +98,26 @@ def canonical_public_key(client: dict[str, str]) -> Path:
 
 
 def prepare_flower_home() -> Path:
-    """Create a writable CLI home with a production config using the real control address."""
+    """Create a writable CLI home from the setup-generated Flower config."""
     source = FLOWER_CONFIG_DIR / "config.toml"
     if not source.is_file():
-        raise ConfigError(f"Flower configuration not found: {source}")
-    if PROFILE == "production-deployment" and not SUPERLINK_CONTROL_ADDRESS:
         raise ConfigError(
-            "SUPERLINK_CONTROL_ADDRESS is required for the production registration profile."
+            f"Generated Flower configuration not found: {source}. "
+            "Run './setup.sh' option 1 (Prepare host) first."
         )
 
     config = source.read_text(encoding="utf-8")
     if PROFILE == "production-deployment":
-        lines = config.splitlines()
-        in_profile = False
-        replaced = False
-        for index, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("["):
-                in_profile = stripped == "[superlink.production-deployment]"
-            elif in_profile and stripped.startswith("address ="):
-                lines[index] = f'address = "{SUPERLINK_CONTROL_ADDRESS}"'
-                replaced = True
-                break
-        if not replaced:
+        marker = "[superlink.production-deployment]"
+        if marker not in config:
             raise ConfigError(
-                "Production SuperLink profile does not contain an address entry."
+                "Generated Flower configuration does not contain the production-deployment profile."
             )
-        config = "\n".join(lines) + "\n"
+        profile_section = config.split(marker, 1)[1].split("[", 1)[0]
+        if "address =" not in profile_section:
+            raise ConfigError(
+                "Generated production SuperLink profile does not contain an address entry."
+            )
 
     config_dir = FLOWER_HOME / ".flwr"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -224,9 +216,6 @@ def main() -> int:
         results.append((client_id, status, detail))
         print(f"  {client_id}: {status}", flush=True)
 
-    # Always query the authoritative Flower registry, even when one or more
-    # registration commands report an error. This distinguishes an actual
-    # registration failure from an idempotent "already registered" response.
     print("\nRegistered clients reported by Flower")
     print("======================================")
     list_ok, listing = list_registered(home)
