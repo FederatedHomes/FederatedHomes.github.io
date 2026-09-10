@@ -29,7 +29,7 @@ def configure_production_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         (auth_host_dir / client["id"]).write_text("test", encoding="utf-8")
 
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
-    monkeypatch.setenv("SUPERLINK_ADDRESS", "fl.example.internal:9092")
+    monkeypatch.setenv("SUPERLINK_HOST", "fl.example.internal")
     monkeypatch.setenv("TLS_ROOT_CERTIFICATES", "/etc/flower/tls/ca.crt")
     monkeypatch.setenv("SUPERLINK_CERTIFICATE", "/etc/flower/tls/superlink.crt")
     monkeypatch.setenv("SUPERLINK_PRIVATE_KEY", "/etc/flower/tls/superlink.key")
@@ -50,7 +50,7 @@ def test_development_compose_keeps_insecure_transport() -> None:
 
 def test_production_compose_requires_explicit_tls_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
-        "DEPLOYMENT_PROFILE", "SUPERLINK_ADDRESS", "TLS_ROOT_CERTIFICATES",
+        "DEPLOYMENT_PROFILE", "SUPERLINK_HOST", "TLS_ROOT_CERTIFICATES",
         "SUPERLINK_CERTIFICATE", "SUPERLINK_PRIVATE_KEY", "TLS_CERTIFICATE_HOST_DIR",
         "SUPERNODE_AUTH_PRIVATE_KEY_DIR", "SUPERNODE_AUTH_HOST_DIR",
         "SUPERLINK_STATE_HOST_DIR", "SUPERLINK_STATE_DIR",
@@ -94,7 +94,7 @@ def test_production_compose_uses_tls_and_authentication(monkeypatch: pytest.Monk
 
 def test_production_supernodes_use_configured_external_superlink_address(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     configure_production_environment(monkeypatch, tmp_path)
-    monkeypatch.setenv("SUPERLINK_ADDRESS", "192.168.1.100:9092")
+    monkeypatch.setenv("SUPERLINK_HOST", "192.168.1.100")
 
     compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION)
     command = compose["services"]["supernode-client1"]["command"]
