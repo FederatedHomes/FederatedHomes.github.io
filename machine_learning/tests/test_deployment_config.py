@@ -21,7 +21,7 @@ def production_env(tmp_path: Path) -> dict[str, str]:
         path.write_text("test", encoding="utf-8")
     return {
         "DEPLOYMENT_PROFILE": "production",
-        "SUPERLINK_ADDRESS": "fl.example.internal:9092",
+        "SUPERLINK_HOST": "fl.example.internal",
         "TLS_ROOT_CERTIFICATES": str(root),
         "SUPERLINK_CERTIFICATE": str(cert),
         "SUPERLINK_PRIVATE_KEY": str(key),
@@ -37,6 +37,7 @@ def test_development_profile_is_default() -> None:
     config = load_deployment_config({})
     assert config.profile is DeploymentProfile.DEVELOPMENT
     assert config.superlink_address == "superlink:9092"
+    assert config.superlink_control_address == "superlink:9093"
     assert not config.is_production
     assert not config.supernode_auth_enabled
 
@@ -65,7 +66,9 @@ def test_production_requires_tls_auth_and_state_directories_when_requested(tmp_p
 def test_production_configuration_loads(tmp_path: Path) -> None:
     config = load_deployment_config(production_env(tmp_path), require_files=True)
     assert config.profile is DeploymentProfile.PRODUCTION
+    assert config.superlink_host == "fl.example.internal"
     assert config.superlink_address == "fl.example.internal:9092"
+    assert config.superlink_control_address == "fl.example.internal:9093"
     assert config.tls_root_certificates == tmp_path / "ca.crt"
     assert config.superlink_certificate == tmp_path / "superlink.crt"
     assert config.superlink_private_key == tmp_path / "superlink.key"
@@ -143,9 +146,9 @@ def test_development_generates_no_tls_or_auth_args() -> None:
     assert config.superlink_state_args() == []
     assert config.supernode_tls_args() == []
     assert config.supernode_auth_args("client-1") == []
-    assert config.cli_tls_config() == {"address": "superlink:9092", "insecure": True}
+    assert config.cli_tls_config() == {"address": "superlink:9093", "insecure": True}
 
 
 def test_production_cli_configuration_uses_root_certificates(tmp_path: Path) -> None:
     config = load_deployment_config(production_env(tmp_path))
-    assert config.cli_tls_config() == {"address": "fl.example.internal:9092", "root-certificates": str(tmp_path / "ca.crt")}
+    assert config.cli_tls_config() == {"address": "fl.example.internal:9093", "root-certificates": str(tmp_path / "ca.crt")}
