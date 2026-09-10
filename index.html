@@ -56,10 +56,10 @@
 
         .visualization-connector .hub-connector {
             fill: none;
-            stroke: rgba(73, 2, 138, 0.68);
+            stroke: var(--purple);
             stroke-width: 4;
             stroke-linecap: round;
-            filter: drop-shadow(0 0 10px rgba(73, 2, 138, 0.28));
+            filter: drop-shadow(0 0 10px var(--purple-faint));
         }
 
         .hub-service-flow {
@@ -76,16 +76,16 @@
         .hub-service-flow .hub-service-trunk,
         .hub-service-flow .hub-service-branch {
             fill: none;
-            stroke: rgba(73, 2, 138, 0.28);
+            stroke: var(--purple-faint);
             stroke-width: 2.2;
             stroke-linecap: round;
             stroke-dasharray: none;
-            filter: drop-shadow(0 0 8px rgba(73, 2, 138, 0.10));
+            filter: drop-shadow(0 0 8px var(--purple-soft));
         }
 
         .hub-service-flow .hub-service-pulse {
-            fill: rgba(73, 2, 138, 0.9);
-            filter: drop-shadow(0 0 8px rgba(73, 2, 138, 0.55));
+            fill: var(--purple);
+            filter: drop-shadow(0 0 8px var(--purple));
         }
 
         .community-container,
@@ -109,25 +109,27 @@
         }
 
         .community-container { background: var(--purple-soft); }
-        .services-container { background: rgba(73, 2, 138, 0.04); }
+        .services-container { background: var(--purple-soft); }
 
         .community-label,
         .services-label {
             position: absolute;
-            top: -12px;
             left: 50%;
             transform: translateX(-50%);
             white-space: nowrap;
             background: var(--white);
             color: var(--purple);
             padding: 5px 20px;
-            border: 1px solid rgba(73, 2, 138, 0.45);
+            border: 1px solid var(--purple-faint);
             border-radius: 15px;
             font-size: 0.85rem;
             font-weight: 600;
             letter-spacing: 1px;
             text-transform: uppercase;
         }
+
+        .community-label { top: -12px; }
+        .services-label { bottom: -12px; }
 
         .clients-section,
         .services-section {
@@ -158,16 +160,15 @@
             position: relative;
             background: var(--purple);
             border-radius: 15px;
-            box-shadow: 0 0 20px rgba(73, 2, 138, 0.45);
+            box-shadow: 0 0 20px var(--purple-faint);
             color: var(--white);
             font-size: 2.2rem;
-            animation: pulse 2s ease-in-out infinite;
             padding: 8px 10px;
             flex-direction: column;
             gap: 4px;
         }
 
-        .client-icon i { animation: float 3s ease-in-out infinite; }
+        .client-icon i { }
         .client-label {
             width: 100%;
             color: var(--white);
@@ -175,7 +176,7 @@
             font-weight: 700;
             text-align: center;
             letter-spacing: 0.04em;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            text-shadow: 0 1px 2px var(--black);
             z-index: 2;
             white-space: nowrap;
             line-height: 1.2;
@@ -222,15 +223,15 @@
 
         .client-data-flow .data-line {
             fill: none;
-            stroke: rgba(73, 2, 138, 0.9);
+            stroke: var(--purple);
             stroke-width: 2.5;
             stroke-linecap: round;
-            filter: drop-shadow(0 0 6px rgba(73, 2, 138, 0.22));
+            filter: drop-shadow(0 0 6px var(--purple-soft));
         }
 
         .client-data-flow .data-pulse {
-            fill: rgba(73, 2, 138, 0.9);
-            filter: drop-shadow(0 0 8px rgba(73, 2, 138, 0.45));
+            fill: var(--purple);
+            filter: drop-shadow(0 0 8px var(--purple-faint));
         }
 
         .federation-hub {
@@ -246,40 +247,32 @@
             width: 130px;
             height: 130px;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: 6px;
             position: relative;
             background: var(--purple);
             border: 4px solid var(--white);
             border-radius: 50%;
-            box-shadow: 0 0 40px rgba(73, 2, 138, 0.52);
+            box-shadow: 0 0 40px var(--purple);
             color: var(--white);
             font-size: 3.2rem;
             animation: hubGlow 3s ease-in-out infinite;
+            padding: 10px;
         }
 
         .hub-label {
-            max-width: 420px;
-            margin-top: 18px;
-            color: var(--purple);
-            font-size: 1rem;
+            width: 100%;
+            margin: 0;
+            color: var(--white);
+            font-size: 0.55rem;
             font-weight: 700;
-            letter-spacing: 2px;
+            letter-spacing: 0.12em;
             text-align: center;
             text-transform: uppercase;
-        }
-
-        .hub-description { max-width: 180px; margin-top: 8px; color: var(--black); font-size: 0.8rem; line-height: 1.4; text-align: center; }
-        .interface-label {
-            margin-top: 15px;
-            padding: 5px 15px;
-            background: var(--purple-soft);
-            border: 1px solid rgba(73, 2, 138, 0.30);
-            border-radius: 12px;
-            color: var(--purple);
-            font-size: 0.75rem;
-            letter-spacing: 1px;
-            text-transform: uppercase;
+            line-height: 1.2;
+            white-space: nowrap;
         }
 
         .service-icon {
@@ -293,83 +286,23 @@
             background: var(--white);
             border: 3px solid var(--purple);
             border-radius: 15px;
-            box-shadow: 0 0 15px rgba(73, 2, 138, 0.28);
+            box-shadow: 0 0 15px var(--purple-faint);
             color: var(--purple);
             font-size: 2rem;
-            animation: serviceGlow 2.5s ease-in-out infinite;
         }
 
-        .request-dot {
-            position: absolute;
-            top: -7px;
-            right: -7px;
-            z-index: 5;
-            width: 18px;
-            height: 18px;
-            border: 3px solid var(--white);
-            border-radius: 50%;
-            background: var(--purple);
-            box-shadow: 0 0 10px var(--purple), 0 0 24px var(--purple), 0 0 42px rgba(73, 2, 138, 0.75);
-            pointer-events: none;
-            animation: requestDot 2.8s ease-out forwards;
-        }
-
-        .request-link-layer {
-            position: absolute;
-            inset: 0;
-            z-index: 4;
-            width: 100%;
-            height: 100%;
-            overflow: visible;
-            pointer-events: none;
-        }
-
-        .request-link {
-            fill: none;
-            stroke: var(--purple);
-            stroke-width: 3;
-            stroke-linecap: round;
-            filter: drop-shadow(0 0 5px var(--purple));
-            stroke-dasharray: 10 8;
-            animation: requestLink 2.8s ease-out forwards;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(73, 2, 138, 0.45); }
-            50% { transform: scale(1.05); box-shadow: 0 0 30px rgba(73, 2, 138, 0.72); }
-        }
-        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
         @keyframes hubGlow {
-            0%, 100% { box-shadow: 0 0 40px rgba(73, 2, 138, 0.52); }
-            50% { box-shadow: 0 0 60px rgba(73, 2, 138, 0.80); }
+            0%, 100% { box-shadow: 0 0 40px var(--purple); }
+            50% { box-shadow: 0 0 60px var(--purple); }
         }
-        @keyframes serviceGlow {
-            0%, 100% { box-shadow: 0 0 15px rgba(73, 2, 138, 0.28); }
-            50% { box-shadow: 0 0 25px rgba(73, 2, 138, 0.55); }
-        }
-        @keyframes requestDot {
-            0% { opacity: 0; transform: scale(0.25); }
-            14% { opacity: 1; transform: scale(1.15); }
-            25%, 70% { opacity: 1; transform: scale(1); }
-            100% { opacity: 0; transform: scale(0.25); }
-        }
-        @keyframes requestLink {
-            0% { opacity: 0; stroke-dashoffset: 80; }
-            14% { opacity: 0.95; }
-            70% { opacity: 0.8; stroke-dashoffset: 0; }
-            100% { opacity: 0; stroke-dashoffset: -80; }
-        }
-
         .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; margin-bottom: 60px; }
         .feature-card { padding: 30px; background: var(--white); transition: transform 0.3s ease, box-shadow 0.3s ease; }
-        .feature-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(73, 2, 138, 0.25); }
+        .feature-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px var(--purple-faint); }
         .feature-icon { margin-bottom: 20px; color: var(--purple); font-size: 2.5rem; }
         .feature-title { margin-bottom: 15px; color: var(--black); font-size: 1.3rem; font-weight: 600; }
         .feature-description { color: var(--black); font-size: 0.95rem; line-height: 1.7; }
 
         footer { padding: 40px 20px; border-top: 2px solid var(--purple); color: var(--black); text-align: center; }
-        .cta-button { display: inline-block; margin-top: 20px; padding: 15px 40px; background: var(--purple); border-radius: 30px; color: var(--white); font-size: 1.1rem; font-weight: 600; text-decoration: none; transition: transform 0.3s ease, box-shadow 0.3s ease; }
-        .cta-button:hover { transform: scale(1.05); box-shadow: 0 10px 30px rgba(73, 2, 138, 0.4); }
 
         @media (max-width: 1024px) {
             .visualization { flex-direction: column; padding: 40px 30px; }
@@ -483,8 +416,11 @@
             </div>
 
             <section class="federation-hub" aria-label="Communal Federation">
-                <div class="hub-icon"><i class="fas fa-shield-halved"></i></div>
-                <div class="hub-label">Communal Federation</div>
+                <div class="hub-icon">
+                    <div class="hub-label">Federation</div>
+                    <i class="fas fa-shield-halved"></i>
+                </div>
+                
             </section>
 
             <div class="services-container">
@@ -531,7 +467,6 @@
         const visualization = document.getElementById('visualization');
         const communityContainer = document.querySelector('.community-container');
         const servicesContainer = document.querySelector('.services-container');
-        const federationHub = document.querySelector('.federation-hub');
         const hubConnector = document.querySelector('.hub-connector');
         const hubServiceFlow = document.querySelector('.hub-service-flow');
         const hubServiceTrunk = document.querySelector('.hub-service-trunk');
@@ -540,11 +475,24 @@
         const hubIcon = document.querySelector('.hub-icon');
         let activeRequest = false;
 
+        function isPortraitLayout() {
+            return window.matchMedia('(max-width: 1024px)').matches;
+        }
+
         function resolveServiceBranchPoint() {
             if (!servicesContainer || !visualization || !hubIcon) return null;
             const servicesRect = servicesContainer.getBoundingClientRect();
             const visualRect = visualization.getBoundingClientRect();
             const hubRect = hubIcon.getBoundingClientRect();
+            const hubCenterX = hubRect.left + hubRect.width / 2 - visualRect.left;
+
+            if (isPortraitLayout()) {
+                return {
+                    x: hubCenterX,
+                    y: servicesRect.top - visualRect.top + servicesRect.height * 0.12
+                };
+            }
+
             return {
                 x: servicesRect.left - visualRect.left + servicesRect.width * 0.05,
                 y: hubRect.top + hubRect.height / 2 - visualRect.top
@@ -552,11 +500,20 @@
         }
 
         function updateVisualizationConnector() {
-            if (!hubConnector || !communityContainer || !federationHub || !hubIcon) return;
+            if (!hubConnector || !communityContainer || !hubIcon) return;
 
             const visualRect = visualization.getBoundingClientRect();
             const communityRect = communityContainer.getBoundingClientRect();
             const hubRect = hubIcon.getBoundingClientRect();
+
+            if (isPortraitLayout()) {
+                const centerX = hubRect.left + hubRect.width / 2 - visualRect.left;
+                const startY = communityRect.bottom - visualRect.top;
+                const endY = hubRect.top - visualRect.top;
+                hubConnector.setAttribute('d', `M ${centerX} ${startY} L ${centerX} ${endY}`);
+                return;
+            }
+
             const startX = communityRect.right - visualRect.left;
             const endX = hubRect.left - visualRect.left + 10;
             const centerY = hubRect.top + hubRect.height / 2 - visualRect.top;
@@ -577,7 +534,6 @@
 
             const flowRect = hubServiceFlow.getBoundingClientRect();
             const hubRect = hubIcon.getBoundingClientRect();
-            const visualRect = visualization.getBoundingClientRect();
             const hubPoint = {
                 x: hubRect.left + hubRect.width / 2 - flowRect.left,
                 y: hubRect.top + hubRect.height / 2 - flowRect.top
@@ -592,6 +548,16 @@
                 const branch = hubServiceBranches[index];
                 if (!branch) return;
                 const target = pointOnElement(icon, flowRect);
+
+                if (isPortraitLayout()) {
+                    const elbowY = Math.min(target.y, branchPoint.y + Math.abs(target.y - branchPoint.y) * 0.55);
+                    branch.setAttribute(
+                        'd',
+                        `M ${branchPoint.x} ${branchPoint.y} L ${branchPoint.x} ${elbowY} L ${target.x} ${elbowY} L ${target.x} ${target.y}`
+                    );
+                    return;
+                }
+
                 const bend = Math.max(18, (target.x - branchPoint.x) * 0.28);
                 branch.setAttribute(
                     'd',
@@ -602,12 +568,6 @@
             hubServicePulse.setAttribute('cx', hubPoint.x);
             hubServicePulse.setAttribute('cy', hubPoint.y);
             hubServicePulse.style.opacity = '0';
-        }
-
-        function makeSvgElement(tag, attributes) {
-            const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
-            Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
-            return element;
         }
 
         function requestPrediction() {
