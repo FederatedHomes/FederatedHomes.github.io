@@ -87,7 +87,7 @@ def test_production_compose_uses_tls_and_authentication(monkeypatch: pytest.Monk
     ]
     assert compose["services"]["supernode-client1"]["volumes"] == [
         f"{tmp_path}/ca.crt:/etc/flower/tls/ca.crt:ro",
-        f"{tmp_path}/auth-host/client1:/etc/flower/auth/client1:ro",
+        f"{auth_host_dir}:/etc/flower/auth:ro",
     ]
     assert compose["services"]["trainer"]["command"][2] == "production-deployment"
 
