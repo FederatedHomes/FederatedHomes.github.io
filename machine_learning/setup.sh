@@ -97,15 +97,28 @@ create_starter_tls_material() {
 }
 
 create_starter_client_auth() {
-  local client_id="$1" auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}" private_key="$auth_dir/$client_id" public_key="$auth_dir/$client_id.pub"
-  require_client_ca_certificate; mkdir -p "$auth_dir"
+  local client_id="$1"
+  local auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}"
+  local private_key="$auth_dir/$client_id"
+  local public_key="$auth_dir/$client_id.pub"
+
+  require_client_ca_certificate
+  mkdir -p "$auth_dir"
+
   if [ -f "$private_key" ] || [ -f "$public_key" ]; then
-    [ -f "$private_key" ] && [ -f "$public_key" ] || { echo "ERROR: Incomplete SuperNode authentication key pair for $client_id." >&2; return 1; }
-    chmod 600 "$private_key"; chmod 644 "$public_key"; return 0
+    [ -f "$private_key" ] && [ -f "$public_key" ] || {
+      echo "ERROR: Incomplete SuperNode authentication key pair for $client_id." >&2
+      return 1
+    }
+    chmod 600 "$private_key"
+    chmod 644 "$public_key"
+    return 0
   fi
+
   echo "Creating SuperNode authentication key pair for $client_id..."
   ssh-keygen -q -t ecdsa -b 384 -f "$private_key" -N "" -C "flower-supernode-$client_id"
-  chmod 600 "$private_key"; chmod 644 "$public_key"
+  chmod 600 "$private_key"
+  chmod 644 "$public_key"
 }
 
 prepare_flower_config() {
@@ -207,7 +220,7 @@ register_configured_clients() {
   docker compose -f "$compose_file" run --rm client-registration
 }
 
-start_server_federation() { generate_server_compose; docker compose -f docker-compose.server.yml build --no-cache client-registration; docker compose -f docker-compose.server.yml up -d --build superlink superexec-serverapp; register_configured_clients; echo "Server infrastructure is running."; }
+start_server_federation() { generate_server_compose; docker compose -f docker-compose.server.yml build client-registration; docker compose -f docker-compose.server.yml up -d --build superlink superexec-serverapp; register_configured_clients; echo "Server infrastructure is running."; }
 start_client_federation() { generate_client_compose; docker compose -f docker-compose.client.yml up --build; }
 
 run_tests() {
@@ -236,7 +249,16 @@ main_menu() {
   while true; do
     echo; echo "FederatedHomes Flower deployment setup"; echo "  1) Prepare host"; echo "  2) Generate server Compose"; echo "  3) Generate client Compose"; echo "  4) Start server infrastructure"; echo "  5) Start client infrastructure"; echo "  6) Run tests"; echo "  7) Show configuration"; echo "  8) Start local all-in-one development federation"; echo "  9) Exit"
     read -rp "Select an option [1-9]: " option
-    case "$option" in 1) prepare_host ;; 2) generate_server_compose ;; 3) generate_client_compose ;; 4) start_server_federation ;; 5) start_client_federation ;; 6) run_tests ;; 7) show_config ;; 8) run_local_development_compose ;; 9) exit 0 ;; *) echo "ERROR: Invalid option." >&2 ;; esac
+    case "$option" in 
+    1) prepare_host ;; 
+    2) generate_server_compose ;; 
+    3) generate_client_compose ;; 
+    4) start_server_federation ;; 
+    5) start_client_federation ;; 
+    6) run_tests ;; 7) show_config ;; 
+    8) run_local_development_compose ;; 
+    9) exit 0 ;; 
+    *) echo "ERROR: Invalid option." >&2 ;; esac
   done
 }
 
