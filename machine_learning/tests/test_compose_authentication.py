@@ -37,7 +37,9 @@ def clients() -> list[dict]:
 def test_superlink_addresses_are_derived_from_one_host(monkeypatch, tmp_path: Path) -> None:
     production_env(tmp_path, monkeypatch)
     compose = build_compose(clients(), profile="production")
-    assert compose["services"]["supernode-client-1"]["command"][1:3] == ["--superlink", "fl.example.internal:9092"]
+    command = compose["services"]["supernode-client-1"]["command"]
+    index = command.index("--superlink")
+    assert command[index + 1] == "fl.example.internal:9092"
 
 
 def test_production_superlink_enables_supernode_authentication(monkeypatch, tmp_path: Path) -> None:
