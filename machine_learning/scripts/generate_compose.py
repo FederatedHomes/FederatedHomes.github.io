@@ -80,7 +80,7 @@ def build_compose(
     else:
         config = load_deployment_config({
             "DEPLOYMENT_PROFILE": DeploymentProfile.DEVELOPMENT.value,
-            "SUPERLINK_ADDRESS": os.environ.get("SUPERLINK_ADDRESS", "superlink:9092"),
+            "SUPERLINK_HOST": os.environ.get("SUPERLINK_HOST", "superlink"),
         }, role=role)
 
     selected_clients = clients
@@ -110,7 +110,7 @@ def build_compose(
     validate_no_insecure_flag(config.profile, superlink_command)
     validate_no_insecure_flag(config.profile, supernode_prefix)
 
-    host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod")
+    host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod/tls")
     host_auth_dir = os.environ.get("SUPERNODE_AUTH_HOST_DIR", "./certificates/prod/auth")
 
     services: dict[str, dict] = {}
@@ -156,7 +156,7 @@ def build_compose(
             "networks": ["flwr-network"],
             "depends_on": ["superlink", "superexec-serverapp"],
         }
-        
+
         if config.is_production:
             registration_volumes = [
                 "./.flwr:/app/.flwr:ro",
@@ -164,9 +164,6 @@ def build_compose(
                 f"{host_tls_dir}/ca.crt:/app/certificates/prod/tls/ca.crt:ro",
                 f"{host_auth_dir}:/app/certificates/prod/auth:ro",
             ]
-            registration_environment = {
-                "SUPERLINK_CONTROL_ADDRESS": config.superlink_control_address,
-            }
             services["client-registration"] = {
                 "image": REGISTRATION_IMAGE,
                 "build": dict(REGISTRATION_BUILD),
@@ -174,7 +171,6 @@ def build_compose(
                 "working_dir": "/app",
                 "networks": ["flwr-network"],
                 "volumes": registration_volumes,
-                "environment": registration_environment,
                 "depends_on": ["superlink"],
             }
 
@@ -196,10 +192,9 @@ def build_compose(
             current_client_id = str(client["id"]).strip()
             node = node_name(current_client_id)
             app = app_name(current_client_id)
-            superlink_address = config.superlink_address
             node_command = [
                 *supernode_prefix,
-                "--superlink", superlink_address,
+                "--superlink", config.superlink_address,
                 "--clientappio-api-address", f"0.0.0.0:{SUPERNODE_PORT}",
                 "--isolation", "process",
             ]
