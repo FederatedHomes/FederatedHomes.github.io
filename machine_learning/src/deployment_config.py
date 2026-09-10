@@ -134,8 +134,6 @@ def _normalize_host(value: str) -> str:
     host = value.strip()
     if not host:
         raise DeploymentConfigError(f"{SUPERLINK_HOST_ENV} must be set to the SuperLink hostname or IP address.")
-    # IPv6 literals may be supplied in bracketed URL form; Flower addresses
-    # below will use the bracketed form to remain unambiguous with the port.
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
     if not _HOST_RE.fullmatch(host):
@@ -153,6 +151,13 @@ def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_
     if resolved_role not in {"server", "client", "all"}:
         raise DeploymentConfigError("Deployment role must be one of: server, client, all.")
     profile = _profile_from_value(env.get(PROFILE_ENV))
+
+    if profile is DeploymentProfile.PRODUCTION:
+        required_env = CLIENT_REQUIRED_ENV if resolved_role == "client" else SERVER_REQUIRED_ENV
+        missing = [name for name in required_env if not env.get(name, "").strip()]
+        if missing:
+            raise DeploymentConfigError("Production deployment is missing required environment variables: " + ", ".join(missing))
+
     host_value = env.get(SUPERLINK_HOST_ENV, "").strip()
     if not host_value and profile is DeploymentProfile.DEVELOPMENT:
         host_value = "superlink"
@@ -161,11 +166,6 @@ def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_
     control_address = _endpoint(superlink_host, SUPERLINK_CONTROL_PORT)
     if profile is DeploymentProfile.DEVELOPMENT:
         return DeploymentConfig(profile=profile, superlink_host=superlink_host, superlink_address=superlink_address, superlink_control_address=control_address)
-
-    required_env = CLIENT_REQUIRED_ENV if resolved_role == "client" else SERVER_REQUIRED_ENV
-    missing = [name for name in required_env if not env.get(name, "").strip()]
-    if missing:
-        raise DeploymentConfigError("Production deployment is missing required environment variables: " + ", ".join(missing))
 
     paths = {
         "tls_root_certificates": Path(env[TLS_ROOT_CERTIFICATES_ENV]),
