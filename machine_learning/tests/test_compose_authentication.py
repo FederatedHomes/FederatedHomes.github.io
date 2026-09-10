@@ -14,7 +14,10 @@ def production_env(tmp_path: Path, monkeypatch) -> None:
     for name in ("ca.crt", "superlink.crt", "superlink.key"):
         (tls_dir / name).write_text("test", encoding="utf-8")
     for client_id in ("client-1", "client-2"):
-        (auth_dir / client_id).write_text("private", encoding="utf-8")
+        # The same host-side auth directory is used uniformly. On a server
+        # host it contains client public keys; on a client host it contains
+        # that client's public/private key material.
+        (auth_dir / client_id).write_text("public", encoding="utf-8")
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
     monkeypatch.setenv("SUPERLINK_HOST", "fl.example.internal")
     monkeypatch.setenv("TLS_ROOT_CERTIFICATES", "/etc/flower/tls/ca.crt")
@@ -67,7 +70,7 @@ def test_render_compose_preserves_relative_state_mount(monkeypatch, tmp_path: Pa
     assert "- state/superlink:/var/lib/flower:rw" not in rendered
 
 
-def test_each_supernode_gets_only_its_own_auth_key_and_ca(monkeypatch, tmp_path: Path) -> None:
+def test_each_supernode_gets_uniform_auth_directory_and_ca_mount(monkeypatch, tmp_path: Path) -> None:
     production_env(tmp_path, monkeypatch)
     compose = build_compose(clients(), profile="production")
     for client_id in ("client-1", "client-2"):
@@ -76,9 +79,12 @@ def test_each_supernode_gets_only_its_own_auth_key_and_ca(monkeypatch, tmp_path:
             "--auth-supernode-private-key", f"/etc/flower/auth/{client_id}"
         ]
         assert "--insecure" not in service["command"]
+        # Client hosts use the same auth directory mount convention as the
+        # server host. The directory contains the individual client's key
+        # material on the client host.
         assert service["volumes"] == [
             f"{tmp_path / 'tls'}/ca.crt:/etc/flower/tls/ca.crt:ro",
-            f"{tmp_path / 'auth'}/{client_id}:/etc/flower/auth/{client_id}:ro",
+            f"{tmp_path / 'auth'}:/etc/flower/auth:ro",
         ]
 
 
@@ -91,11 +97,18 @@ def test_supernodes_cannot_receive_superlink_private_key(monkeypatch, tmp_path: 
         assert not any("superlink.crt" in volume for volume in volumes)
 
 
-def test_server_role_contains_only_server_infrastructure(monkeypatch, tmp_path: Path) -> None:
+def test_server_role_contains_server_infrastructure_and_federation_services(monkeypatch, tmp_path: Path) -> None:
     production_env(tmp_path, monkeypatch)
     compose = build_compose(clients(), profile="production", role="server")
-    assert set(compose["services"]) == {"superlink", "superexec-serverapp"}
-    assert "trainer" not in compose["services"]
+    assert set(compose["services"]) == {
+        "superlink",
+        "superexec-serverapp",
+        "trainer",
+        "client-registration",
+    }
+    assert "test-runner" not in compose["services"]
+    assert not any(name.startswith("supernode-") for name in compose["services"])
+    assert not any(name.startswith("superexec-clientapp-") for name in compose["services"])
 
 
 def test_all_role_retains_trainer_for_local_development(monkeypatch) -> None:
