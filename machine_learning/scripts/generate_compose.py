@@ -29,6 +29,11 @@ CLIENT_ID_ENV = "CLIENT_ID"
 
 
 def validate_clients(clients: list[dict]) -> None:
+    """Validate fields needed to generate Compose services.
+
+    Registration credentials are deliberately excluded here: public keys are
+    registration-time data, not a prerequisite for rendering a deployment.
+    """
     if len(clients) < 2:
         raise ValueError("At least 2 clients are required.")
     ids = [str(client.get("id", "")).strip() for client in clients]
@@ -40,8 +45,6 @@ def validate_clients(clients: list[dict]) -> None:
         for key in ("data_dir", "checkpoint_dir"):
             if not str(client.get(key, "")).strip():
                 raise ValueError(f"Client '{client['id']}' must define '{key}'.")
-        if not str(client.get("public_key", "")).strip():
-            raise ValueError(f"Client '{client['id']}' must define 'public_key'.")
 
 
 def safe_id(client_id: str) -> str:
@@ -70,9 +73,18 @@ def build_compose(
     role: str = "all",
     client_id: str | None = None,
 ) -> dict:
-    validate_clients(clients)
     if role not in {"all", "server", "client"}:
         raise ValueError("Deployment role must be one of: all, server, client.")
+
+    # Resolve role-specific arguments before loading production environment
+    # configuration so callers receive the most actionable validation error.
+    resolved_client_id = None
+    if role == "client":
+        resolved_client_id = (client_id or os.environ.get(CLIENT_ID_ENV, "")).strip()
+        if not resolved_client_id:
+            raise ValueError("Client deployment requires --client-id or CLIENT_ID.")
+
+    validate_clients(clients)
 
     profile_value = profile.value if isinstance(profile, DeploymentProfile) else profile
     if profile_value == DeploymentProfile.PRODUCTION.value:
@@ -85,9 +97,6 @@ def build_compose(
 
     selected_clients = clients
     if role == "client":
-        resolved_client_id = (client_id or os.environ.get(CLIENT_ID_ENV, "")).strip()
-        if not resolved_client_id:
-            raise ValueError("Client deployment requires --client-id or CLIENT_ID.")
         selected_clients = [client for client in clients if str(client["id"]).strip() == resolved_client_id]
         if not selected_clients:
             raise ValueError(f"Client ID '{resolved_client_id}' is not defined in clients.yml.")
