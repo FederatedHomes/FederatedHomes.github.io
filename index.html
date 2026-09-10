@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Federated Homes</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
             --purple: #49028a;
@@ -168,7 +167,25 @@
             gap: 4px;
         }
 
-        .client-icon i { }
+        .icon-svg {
+            display: block;
+            width: 1.2em;
+            height: 1.2em;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+        }
+
+        .client-icon .icon-svg,
+        .service-icon .icon-svg,
+        .hub-icon .icon-svg {
+            width: 1.5em;
+            height: 1.5em;
+        }
+
         .client-label {
             width: 100%;
             color: var(--white);
@@ -249,8 +266,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            gap: 6px;
+            justify-content: flex-end;
+            gap: 0;
             position: relative;
             background: var(--purple);
             border: 4px solid var(--white);
@@ -259,20 +276,30 @@
             color: var(--white);
             font-size: 3.2rem;
             animation: hubGlow 3s ease-in-out infinite;
-            padding: 10px;
+            padding: 10px 10px 22px;
         }
 
         .hub-label {
+            position: absolute;
+            left: 50%;
+            top: 42%;
+            transform: translate(-50%, -50%);
             width: 100%;
             margin: 0;
             color: var(--white);
-            font-size: 0.55rem;
+            font-size: 0.8rem;
             font-weight: 700;
             letter-spacing: 0.12em;
             text-align: center;
             text-transform: uppercase;
-            line-height: 1.2;
+            line-height: 1.1;
             white-space: nowrap;
+        }
+
+        .hub-icon .icon-svg {
+            width: 1.2em;
+            height: 1.2em;
+            transform: translateY(25px);
         }
 
         .service-icon {
@@ -344,7 +371,15 @@
 <body>
     <div class="container">
         <header>
-            <h1><i class="fas fa-network-wired"></i> FEDERATED HOMES</h1>
+            <h1>
+                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <circle cx="6" cy="8" r="2.5"></circle>
+                    <circle cx="18" cy="8" r="2.5"></circle>
+                    <circle cx="12" cy="17" r="2.5"></circle>
+                    <path d="M8.2 9.2l2.8 5.2M15.8 9.2l-2.8 5.2M8.5 8h7"></path>
+                </svg>
+                FEDERATED HOMES
+            </h1>
             <p class="subtitle">Collaborative privacy-preserving intelligence with local data</p>
         </header>
 
@@ -360,16 +395,36 @@
                 <circle class="hub-service-pulse" r="5"></circle>
             </svg>
             <div class="community-container">
-                <div class="community-label"><i class="fas fa-users"></i> Community</div>
+                <div class="community-label">
+                    <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <circle cx="9" cy="8" r="3"></circle>
+                        <circle cx="17" cy="9" r="2.5"></circle>
+                        <path d="M4 18c0-2.2 2.2-4 5-4s5 1.8 5 4"></path>
+                        <path d="M14 18c0-1.8 1.6-3.2 3.5-3.2S21 16.2 21 18"></path>
+                    </svg>
+                    Community
+                </div>
                 <div class="clients-section">
                     <article class="client" data-client="1">
                         <div class="client-icon">
                             <div class="client-label">Client 1</div>
-                            <i class="fas fa-home"></i>
+                            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M3 10.5L12 3l9 7.5"></path>
+                                <path d="M5 9.5V19h14V9.5"></path>
+                                <path d="M10 19v-6h4v6"></path>
+                            </svg>
                         </div>
                         <div class="data-sources" aria-label="Client 1 data sources">
-                            <div class="data-source" data-source="electricity" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
-                            <div class="data-source" data-source="water" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                            <div class="data-source" data-source="electricity" title="Smart electric meter">
+                                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M13 2L5 13h5l-1 9 8-11h-5l1-9z" fill="currentColor" stroke="none"></path>
+                                </svg>
+                            </div>
+                            <div class="data-source" data-source="water" title="Smart water consumption meter">
+                                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M12 2.5c3.5 4.2 6 6.7 6 10a6 6 0 1 1-12 0c0-3.3 2.5-5.8 6-10z" fill="currentColor" stroke="none"></path>
+                                </svg>
+                            </div>
                         </div>
                         <svg class="client-data-flow" aria-hidden="true" preserveAspectRatio="none">
                             <path class="data-line data-line-main"></path>
@@ -382,11 +437,23 @@
                     <article class="client" data-client="2">
                         <div class="client-icon">
                             <div class="client-label">Client 2</div>
-                            <i class="fas fa-home"></i>
+                            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M3 10.5L12 3l9 7.5"></path>
+                                <path d="M5 9.5V19h14V9.5"></path>
+                                <path d="M10 19v-6h4v6"></path>
+                            </svg>
                         </div>
                         <div class="data-sources" aria-label="Client 2 data sources">
-                            <div class="data-source" data-source="electricity" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
-                            <div class="data-source" data-source="water" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                            <div class="data-source" data-source="electricity" title="Smart electric meter">
+                                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M13 2L5 13h5l-1 9 8-11h-5l1-9z" fill="currentColor" stroke="none"></path>
+                                </svg>
+                            </div>
+                            <div class="data-source" data-source="water" title="Smart water consumption meter">
+                                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M12 2.5c3.5 4.2 6 6.7 6 10a6 6 0 1 1-12 0c0-3.3 2.5-5.8 6-10z" fill="currentColor" stroke="none"></path>
+                                </svg>
+                            </div>
                         </div>
                         <svg class="client-data-flow" aria-hidden="true" preserveAspectRatio="none">
                             <path class="data-line data-line-main"></path>
@@ -399,11 +466,23 @@
                     <article class="client" data-client="3">
                         <div class="client-icon">
                             <div class="client-label">Client 3</div>
-                            <i class="fas fa-home"></i>
+                            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M3 10.5L12 3l9 7.5"></path>
+                                <path d="M5 9.5V19h14V9.5"></path>
+                                <path d="M10 19v-6h4v6"></path>
+                            </svg>
                         </div>
                         <div class="data-sources" aria-label="Client 3 data sources">
-                            <div class="data-source" data-source="electricity" title="Smart electric meter"><i class="fas fa-bolt"></i></div>
-                            <div class="data-source" data-source="water" title="Smart water consumption meter"><i class="fas fa-tint"></i></div>
+                            <div class="data-source" data-source="electricity" title="Smart electric meter">
+                                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M13 2L5 13h5l-1 9 8-11h-5l1-9z" fill="currentColor" stroke="none"></path>
+                                </svg>
+                            </div>
+                            <div class="data-source" data-source="water" title="Smart water consumption meter">
+                                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M12 2.5c3.5 4.2 6 6.7 6 10a6 6 0 1 1-12 0c0-3.3 2.5-5.8 6-10z" fill="currentColor" stroke="none"></path>
+                                </svg>
+                            </div>
                         </div>
                         <svg class="client-data-flow" aria-hidden="true" preserveAspectRatio="none">
                             <path class="data-line data-line-main"></path>
@@ -418,24 +497,46 @@
             <section class="federation-hub" aria-label="Communal Federation">
                 <div class="hub-icon">
                     <div class="hub-label">Federation</div>
-                    <i class="fas fa-shield-halved"></i>
+                    <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M12 3l7 3v5.5c0 4.3-2.8 8.1-7 10.5-4.2-2.4-7-6.2-7-10.5V6l7-3z"></path>
+                        <path d="M9 12.2l1.8 1.8 3.9-4.2"></path>
+                    </svg>
                 </div>
                 
             </section>
 
             <div class="services-container">
-                <div class="services-label"><i class="fas fa-building"></i> Service Providers</div>
+                <div class="services-label">
+                    <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M4 20V7l8-4 8 4v13"></path>
+                        <path d="M9 20v-6h6v6M8 9h.01M12 9h.01M16 9h.01"></path>
+                    </svg>
+                    Service Providers
+                </div>
                 <div class="services-section">
                     <article class="service">
-                        <div class="service-icon"><i class="fas fa-water"></i></div>
+                        <div class="service-icon">
+                            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M12 2.5c3.5 4.2 6 6.7 6 10a6 6 0 1 1-12 0c0-3.3 2.5-5.8 6-10z" fill="currentColor" stroke="none"></path>
+                            </svg>
+                        </div>
                         <div class="service-label">Waste-Water Research</div>
                     </article>
                     <article class="service">
-                        <div class="service-icon"><i class="fas fa-bolt"></i></div>
+                        <div class="service-icon">
+                            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M13 2L5 13h5l-1 9 8-11h-5l1-9z" fill="currentColor" stroke="none"></path>
+                            </svg>
+                        </div>
                         <div class="service-label">Electricity Providers</div>
                     </article>
                     <article class="service">
-                        <div class="service-icon"><i class="fas fa-glass-water"></i></div>
+                        <div class="service-icon">
+                            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M7 3h10l-1.5 11.5A3.5 3.5 0 0 1 12 18a3.5 3.5 0 0 1-3.5-3.5L7 3z"></path>
+                                <path d="M9.5 8.5h5M10 11h4"></path>
+                            </svg>
+                        </div>
                         <div class="service-label">Drinking Water Providers</div>
                     </article>
                 </div>
@@ -444,19 +545,27 @@
 
         <section class="features">
             <article class="feature-card">
-                <div class="feature-icon"><i class="fas fa-lock"></i></div>
+                <div class="feature-icon">
+                    <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <rect x="5" y="10" width="14" height="10" rx="2"></rect>
+                        <path d="M8 10V7.5A4 4 0 0 1 16 7.5V10"></path>
+                    </svg>
+                </div>
                 <h2 class="feature-title">Privacy-Preserving</h2>
                 <p class="feature-description">Data remains on client premises. Only model updates are shared with the trusted federation hub, preserving data sovereignty.</p>
             </article>
             <article class="feature-card">
-                <div class="feature-icon"><i class="fas fa-brain"></i></div>
+                <div class="feature-icon">
+                    <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M9 18h6"></path>
+                        <path d="M9.5 21h5"></path>
+                        <path d="M8.5 14.5a7 7 0 1 1 7 0c-.9.7-1.5 1.5-1.5 2.5h-4c0-1-.6-1.8-1.5-2.5Z"></path>
+                        <path d="M0 2l3 3"></path>
+                        <path d="M24 2l-3 3"></path>
+                    </svg>
+                </div>
                 <h2 class="feature-title">Collaborative Intelligence</h2>
-                <p class="feature-description">Local models learn from consumption patterns and contribute to a robust global model for the whole community.</p>
-            </article>
-            <article class="feature-card">
-                <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
-                <h2 class="feature-title">Predictive Insights</h2>
-                <p class="feature-description">The global model delivers consumption forecasts to service providers for resource allocation and infrastructure planning.</p>
+                <p class="feature-description">The global model in the federation delivers consumption forecasts to service providers for resource allocation and infrastructure planning.</p>
             </article>
         </section>
 
