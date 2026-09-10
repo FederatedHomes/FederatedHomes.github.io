@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from scripts.generate_compose import build_compose
-from src.deployment_config import DeploymentConfigError, DeploymentProfile
+from src.deployment_config import DeploymentProfile
 
 
 CLIENTS = [
@@ -24,7 +24,7 @@ def production_client_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
         (auth_dir / client["id"]).write_text("test", encoding="utf-8")
 
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
-    monkeypatch.setenv("SUPERLINK_ADDRESS", "192.168.1.100:9092")
+    monkeypatch.setenv("SUPERLINK_HOST", "192.168.1.100")
     monkeypatch.setenv("TLS_ROOT_CERTIFICATES", "/etc/flower/tls/ca.crt")
     monkeypatch.setenv("TLS_CERTIFICATE_HOST_DIR", str(tls_dir))
     monkeypatch.setenv("SUPERNODE_AUTH_PRIVATE_KEY_DIR", "/etc/flower/auth")
