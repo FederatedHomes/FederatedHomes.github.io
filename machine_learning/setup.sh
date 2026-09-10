@@ -5,49 +5,27 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 cd "$ROOT_DIR"
 
 ensure_host_dependencies() {
-  local role="${1:-server}"
-  local missing_commands=()
-  if ! command -v python3 >/dev/null 2>&1; then missing_commands+=("python3"); fi
-  if ! command -v docker >/dev/null 2>&1; then
-    missing_commands+=("docker")
-  elif ! docker compose version >/dev/null 2>&1; then
-    missing_commands+=("docker compose")
-  fi
+  local role="${1:-server}" missing_commands=()
+  command -v python3 >/dev/null 2>&1 || missing_commands+=("python3")
+  command -v docker >/dev/null 2>&1 || missing_commands+=("docker")
+  if command -v docker >/dev/null 2>&1 && ! docker compose version >/dev/null 2>&1; then missing_commands+=("docker compose"); fi
   if [ "$role" = server ] && ! command -v openssl >/dev/null 2>&1; then missing_commands+=("openssl"); fi
   if [ "$role" = client ] && ! command -v ssh-keygen >/dev/null 2>&1; then missing_commands+=("ssh-keygen"); fi
-  if ((${#missing_commands[@]} > 0)); then
-    echo >&2
-    echo "Missing required host tools: ${missing_commands[*]}" >&2
-    echo "Install the missing operating-system packages, then rerun ./setup.sh." >&2
-    return 1
-  fi
+  if ((${#missing_commands[@]})); then echo "Missing required host tools: ${missing_commands[*]}" >&2; return 1; fi
   if ! python3 -c 'import yaml' >/dev/null 2>&1; then
-    echo >&2
     echo "Missing required Python library: PyYAML" >&2
-    if ! python3 -m pip --version >/dev/null 2>&1; then
-      echo "pip is not available for Python 3." >&2
-      echo "Install pip using your operating-system package manager, then rerun ./setup.sh." >&2
-      return 1
-    fi
-    read -rp "Install PyYAML for this host now? [Y/n]: " install_choice
-    if [[ "$install_choice" =~ ^[Nn]$ ]]; then
-      echo "ERROR: PyYAML is required by the setup scripts." >&2
-      echo "Install it with: python3 -m pip install PyYAML" >&2
-      return 1
-    fi
-    echo "Installing PyYAML..."
-    python3 -m pip install --user PyYAML || { echo "ERROR: Could not install PyYAML automatically." >&2; return 1; }
-    python3 -c 'import yaml' >/dev/null 2>&1 || { echo "ERROR: PyYAML installation completed but yaml cannot be imported." >&2; return 1; }
-    echo "PyYAML is available."
-  else
-    echo "PyYAML: available"
+    python3 -m pip --version >/dev/null 2>&1 || { echo "Install pip, then rerun ./setup.sh." >&2; return 1; }
+    read -rp "Install PyYAML for this host now? [Y/n]: " choice
+    [[ "$choice" =~ ^[Nn]$ ]] && { echo "ERROR: PyYAML is required." >&2; return 1; }
+    python3 -m pip install --user PyYAML || return 1
   fi
   echo "Host prerequisites verified for $role host."
 }
 
 load_environment() {
   if [ ! -f .env ]; then
-    if [ -f .env.example ]; then cp .env.example .env; echo "Created .env from .env.example"; else echo "ERROR: .env.example not found. Create .env before continuing."; return 1; fi
+    [ -f .env.example ] || { echo "ERROR: .env.example not found." >&2; return 1; }
+    cp .env.example .env; echo "Created .env from .env.example"
   fi
   set -a
   # shellcheck disable=SC1091
@@ -58,67 +36,46 @@ load_environment() {
 read_clients() { [ -f clients.yml ] || { echo "ERROR: clients.yml not found." >&2; return 1; }; }
 
 select_host_role() {
-  local configured_role="${DEPLOYMENT_ROLE:-}"
-  if [ "$configured_role" = server ] || [ "$configured_role" = client ]; then printf '%s\n' "$configured_role"; return 0; fi
-  printf '\n' >&2
-  printf '%s\n' "What type of host are you preparing?" >&2
-  printf '%s\n' "  1) Server host — runs Flower SuperLink and ServerApp" >&2
-  printf '%s\n' "  2) Client host — runs one SuperNode and one ClientApp" >&2
-  read -rp "Enter choice [1-2]: " role_choice
-  case "$role_choice" in 1) printf '%s\n' server ;; 2) printf '%s\n' client ;; *) echo "ERROR: Invalid host role selection." >&2; return 1 ;; esac
+  case "${DEPLOYMENT_ROLE:-}" in server|client) printf '%s\n' "$DEPLOYMENT_ROLE"; return ;; esac
+  printf '\nWhat type of host are you preparing?\n  1) Server host — runs Flower SuperLink and ServerApp\n  2) Client host — runs one SuperNode and one ClientApp\n' >&2
+  read -rp "Enter choice [1-2]: " choice
+  case "$choice" in 1) echo server ;; 2) echo client ;; *) echo "ERROR: Invalid host role selection." >&2; return 1 ;; esac
 }
 
 read_client_ids() {
-  local line
   CLIENT_IDS=()
-  while IFS= read -r line; do [ -n "$line" ] && CLIENT_IDS+=("$line"); done <<EOF
-$(python3 - <<'PY'
+  while IFS= read -r line; do [ -n "$line" ] && CLIENT_IDS+=("$line"); done < <(python3 - <<'PY'
 from pathlib import Path
 import yaml
 with Path("clients.yml").open(encoding="utf-8") as handle:
-    clients = (yaml.safe_load(handle) or {}).get("clients", [])
-for client in clients:
-    value = str(client.get("id", "")).strip()
-    if value: print(value)
+    for client in (yaml.safe_load(handle) or {}).get("clients", []):
+        value = str(client.get("id", "")).strip()
+        if value: print(value)
 PY
 )
-EOF
 }
 
 select_client_id() {
-  local selected="${CLIENT_ID:-}"
-  if [ -n "$selected" ]; then printf '%s\n' "$selected"; return 0; fi
-  read_client_ids
-  if ((${#CLIENT_IDS[@]} == 0)); then echo "ERROR: No clients are configured in clients.yml." >&2; return 1; fi
-  printf '\n' >&2
-  printf '%s\n' "Select the client assigned to this machine:" >&2
-  local index=1 client_id
-  for client_id in "${CLIENT_IDS[@]}"; do printf '  %s) %s\n' "$index" "$client_id" >&2; index=$((index + 1)); done
-  read -rp "Enter client number: " selection
-  if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt "${#CLIENT_IDS[@]}" ]; then echo "ERROR: Invalid client selection." >&2; return 1; fi
-  printf '%s\n' "${CLIENT_IDS[$((selection - 1))]}"
+  [ -n "${CLIENT_ID:-}" ] && { echo "$CLIENT_ID"; return; }
+  read_client_ids; ((${#CLIENT_IDS[@]})) || { echo "ERROR: No clients are configured." >&2; return 1; }
+  echo "Select the client assigned to this machine:" >&2
+  local i=1 id; for id in "${CLIENT_IDS[@]}"; do printf '  %s) %s\n' "$i" "$id" >&2; i=$((i+1)); done
+  read -rp "Enter client number: " choice
+  [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#CLIENT_IDS[@]}" ] || { echo "ERROR: Invalid client selection." >&2; return 1; }
+  echo "${CLIENT_IDS[$((choice-1))]}"
 }
 
 require_client_ca_certificate() {
   local ca_file="${TLS_CERTIFICATE_HOST_DIR:-./certificates/prod/tls}/ca.crt"
-  if [ ! -f "$ca_file" ]; then
-    echo >&2
-    echo "ERROR: Required federation CA certificate was not found." >&2
-    echo "Expected location: $ca_file" >&2
-    echo "Copy the federation's ca.crt to that location, then rerun ./setup.sh." >&2
-    return 1
-  fi
+  [ -f "$ca_file" ] || { echo "ERROR: Required federation CA certificate was not found: $ca_file" >&2; return 1; }
   chmod 644 "$ca_file"
-  echo "Federation CA certificate found: $ca_file"
 }
 
 create_starter_tls_material() {
   [ "$1" = server ] || return 0
-  local tls_dir="${TLS_CERTIFICATE_HOST_DIR:-./certificates/prod/tls}"
-  local starter_endpoint="${SUPERLINK_ADDRESS:-fl.example.internal:9092}"
-  local starter_host="${STARTER_SUPERLINK_HOST:-${starter_endpoint%%:*}}"
+  local tls_dir="${TLS_CERTIFICATE_HOST_DIR:-./certificates/prod/tls}" starter_host="${SUPERLINK_HOST:-}"
+  [ -n "$starter_host" ] || { echo "ERROR: SUPERLINK_HOST must be set for production server setup." >&2; return 1; }
   mkdir -p "$tls_dir"
-  command -v openssl >/dev/null 2>&1 || { echo "ERROR: OpenSSL is required." >&2; return 1; }
   local ca_key="$tls_dir/.starter-ca.key" ca_crt="$tls_dir/ca.crt" superlink_key="$tls_dir/superlink.key" superlink_crt="$tls_dir/superlink.crt" csr="$tls_dir/.starter-superlink.csr" ext="$tls_dir/.starter-superlink.ext"
   if [ ! -f "$ca_crt" ] || [ ! -f "$superlink_crt" ] || [ ! -f "$superlink_key" ]; then
     echo "Creating starter federation CA and SuperLink certificate for $starter_host..."
@@ -134,27 +91,38 @@ create_starter_tls_material() {
     openssl x509 -req -in "$csr" -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial -out "$superlink_crt" -days 825 -sha256 -extfile "$ext" >/dev/null 2>&1
     rm -f "$csr" "$ext" "$tls_dir/ca.srl"
   fi
-  rm -f "$ca_key"
-  chmod 644 "$ca_crt" "$superlink_crt"
-  chmod 600 "$superlink_key"
+  rm -f "$ca_key"; chmod 644 "$ca_crt" "$superlink_crt"; chmod 600 "$superlink_key"
   echo "Server TLS material is ready in $tls_dir"
   echo "Share only ca.crt with client hosts."
 }
 
 create_starter_client_auth() {
-  local client_id="$1" auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}"
-  local private_key="$auth_dir/$client_id" public_key="$auth_dir/$client_id.pub"
-  require_client_ca_certificate
-  mkdir -p "$auth_dir"
-  command -v ssh-keygen >/dev/null 2>&1 || { echo "ERROR: ssh-keygen is required." >&2; return 1; }
+  local client_id="$1" auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}" private_key="$auth_dir/$client_id" public_key="$auth_dir/$client_id.pub"
+  require_client_ca_certificate; mkdir -p "$auth_dir"
   if [ -f "$private_key" ] || [ -f "$public_key" ]; then
-    if [ -f "$private_key" ] && [ -f "$public_key" ]; then chmod 600 "$private_key"; chmod 644 "$public_key"; echo "SuperNode authentication key pair already exists for $client_id."; return 0; fi
-    echo "ERROR: Incomplete SuperNode authentication key pair for $client_id." >&2; return 1
+    [ -f "$private_key" ] && [ -f "$public_key" ] || { echo "ERROR: Incomplete SuperNode authentication key pair for $client_id." >&2; return 1; }
+    chmod 600 "$private_key"; chmod 644 "$public_key"; return 0
   fi
   echo "Creating SuperNode authentication key pair for $client_id..."
   ssh-keygen -q -t ecdsa -b 384 -f "$private_key" -N "" -C "flower-supernode-$client_id"
   chmod 600 "$private_key"; chmod 644 "$public_key"
-  echo "SuperNode key pair created for $client_id."
+}
+
+prepare_flower_config() {
+  python3 - <<'PY'
+from pathlib import Path
+import os
+from src.deployment_config import load_deployment_config
+config = load_deployment_config(role=os.environ.get("DEPLOYMENT_ROLE", "server"))
+path = Path(".flwr/config.toml")
+path.parent.mkdir(parents=True, exist_ok=True)
+existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+marker = "[superlink.production-deployment]"
+prefix = existing.split(marker, 1)[0] if marker in existing else '''[superlink]\ndefault = "local"\n\n[superlink.supergrid]\naddress = "supergrid.flower.ai"\n\n[superlink.local]\naddress = ":local:"\n\n[superlink.local-deployment]\naddress = "superlink:9093"\ninsecure = true\n\n'''
+section = f'''{marker}\n# GENERATED BY ./setup.sh FROM SUPERLINK_HOST. DO NOT EDIT THE ADDRESS HERE.\naddress = "{config.superlink_control_address}"\nroot-certificates = "/app/certificates/prod/tls/ca.crt"\n'''
+path.write_text(prefix + section, encoding="utf-8")
+print(f"Generated {path}: Control API {config.superlink_control_address}")
+PY
 }
 
 create_directories() {
@@ -162,211 +130,113 @@ create_directories() {
   if [ "$role" = server ]; then
     if [ "${DEPLOYMENT_PROFILE:-development}" = production ]; then
       [ -z "${SUPERLINK_STATE_HOST_DIR:-}" ] || mkdir -p "$SUPERLINK_STATE_HOST_DIR"
-      [ -z "${SUPERLINK_STATE_HOST_DIR:-}" ] || echo "Prepared SuperLink state directory: $SUPERLINK_STATE_HOST_DIR"
       create_starter_tls_material server
     fi
-    return 0
-  fi
-  if [ "$role" = client ]; then
-    read_clients
-    if [ "${DEPLOYMENT_PROFILE:-development}" = production ]; then create_starter_client_auth "$client_id"; fi
+  else
+    [ "${DEPLOYMENT_PROFILE:-development}" = production ] || { echo "ERROR: Physical client setup requires DEPLOYMENT_PROFILE=production." >&2; return 1; }
+    create_starter_client_auth "$client_id"
     python3 - "$client_id" <<'PY'
 from pathlib import Path
-import sys, yaml
-requested = sys.argv[1].strip()
-with Path("clients.yml").open(encoding="utf-8") as handle: clients = (yaml.safe_load(handle) or {}).get("clients", [])
-if len(clients) < 2: raise SystemExit("ERROR: clients.yml must define at least 2 clients.")
-selected = [c for c in clients if str(c.get("id", "")).strip() == requested]
+import sys,yaml
+requested=sys.argv[1]
+with Path("clients.yml").open(encoding="utf-8") as handle: clients=(yaml.safe_load(handle) or {}).get("clients",[])
+if len(clients)<2: raise SystemExit("ERROR: clients.yml must define at least 2 clients.")
+selected=[c for c in clients if str(c.get("id","")).strip()==requested]
 if not selected: raise SystemExit(f"ERROR: Client ID '{requested}' is not defined in clients.yml.")
-client = selected[0]
-for field in ("data_dir", "checkpoint_dir"):
-    value = str(client.get(field, "")).strip()
+for field in ("data_dir","checkpoint_dir"):
+    value=str(selected[0].get(field,"")).strip()
     if not value: raise SystemExit(f"ERROR: Client '{requested}' is missing '{field}'.")
-    Path(value).mkdir(parents=True, exist_ok=True)
-print(f"Prepared {requested}: data={client['data_dir']}, checkpoints={client['checkpoint_dir']}")
+    Path(value).mkdir(parents=True,exist_ok=True)
 PY
   fi
-}
-
-prepare_development_auth() {
-  [ "${DEPLOYMENT_PROFILE:-development}" = development ] || return 0
-  [ "${DEPLOYMENT_ROLE:-all}" = all ] || return 0
-  [ -f clients.yml ] && [ -f scripts/generate_supernode_auth.py ] || return 0
-  local auth_dir="${DEV_SUPERNODE_AUTH_DIR:-certificates/dev/auth}"
-  read_client_ids
-  local missing=0 client_id
-  for client_id in "${CLIENT_IDS[@]}"; do [ -f "$auth_dir/$client_id" ] && [ -f "$auth_dir/$client_id.pub" ] || missing=1; done
-  if [ "$missing" -eq 1 ]; then python3 scripts/generate_supernode_auth.py --output-dir "$auth_dir" "${CLIENT_IDS[@]}"; fi
-}
-
-show_host_context() {
-  local role="$1" client_id="${2:-}"
-  echo
-  echo "Deployment profile: ${DEPLOYMENT_PROFILE:-development}"
-  echo "Host role:          $role"
-  if [ "$role" = client ]; then
-    echo "Client identity:    $client_id"
-    echo "Identity scope:     only $client_id credentials are created/used on this host"
-  fi
-  echo
-}
-
-register_configured_clients() {
-  [ "${DEPLOYMENT_PROFILE:-development}" = production ] || return 0
-  local compose_file="${SERVER_COMPOSE_FILE:-docker-compose.server.yml}"
-  local auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}"
-  [ -f "$compose_file" ] || { echo "ERROR: Server Compose file not found: $compose_file" >&2; return 1; }
-  read_client_ids
-  if ((${#CLIENT_IDS[@]} < 2)); then echo "ERROR: At least 2 clients must be configured before registration." >&2; return 1; fi
-
-  echo "Registering ${#CLIENT_IDS[@]} configured SuperNodes with Flower..."
-  local client_id public_key
-  for client_id in "${CLIENT_IDS[@]}"; do
-    public_key="$auth_dir/$client_id.pub"
-    if [ ! -f "$public_key" ]; then
-      echo "ERROR: Public key for $client_id was not found on the server: $public_key" >&2
-      echo "Transfer only the public key from the client host; never transfer its private key." >&2
-      return 1
-    fi
-  done
-
-  docker compose -f "$compose_file" run --rm client-registration
-
-  echo
-  echo "All configured SuperNodes are registered with the federation."
 }
 
 validate_auth_environment() {
   local role="$1" client_id="${2:-}"
   [ "${DEPLOYMENT_PROFILE:-development}" = production ] || return 0
-  echo "Validating production TLS, SuperNode authentication, and deployment state..."
   python3 - "$role" "$client_id" <<'PY'
-from pathlib import Path
-import sys, yaml
+import sys
 from src.deployment_config import load_deployment_config
-role, client_id = sys.argv[1], sys.argv[2].strip()
-config = load_deployment_config(role=role, require_files=True)
-print(f"Validated production SuperLink endpoint: {config.superlink_address}")
+role,client_id=sys.argv[1],sys.argv[2].strip()
+config=load_deployment_config(role=role,require_files=True)
+print(f"Validated SuperLink Fleet endpoint: {config.superlink_address}")
 print(f"Validated SuperLink Control API: {config.superlink_control_address}")
-print(f"Validated TLS material: {config.tls_certificate_host_dir}")
-with Path("clients.yml").open(encoding="utf-8") as handle: clients = (yaml.safe_load(handle) or {}).get("clients", [])
-if role == "client":
+if role=="client":
     if not client_id: raise SystemExit("ERROR: CLIENT_ID must be set for a client deployment.")
-    selected = [c for c in clients if str(c.get("id", "")).strip() == client_id]
-    if not selected: raise SystemExit(f"ERROR: Client ID '{client_id}' is not defined in clients.yml.")
-    private = config.supernode_auth_host_key(client_id); public = private.with_name(private.name + ".pub")
-    for path in (private, public):
+    private=config.supernode_auth_host_key(client_id); public=private.with_name(private.name+".pub")
+    for path in (private,public):
         if not path.is_file(): raise SystemExit(f"Missing SuperNode authentication material: {path}")
-    print(f"Validated SuperNode authentication key pair for {client_id}.")
 else:
     if config.superlink_state_host_dir is None: raise SystemExit("ERROR: Server deployment requires SuperLink persistent state configuration.")
-    print(f"Validated SuperLink state directory: {config.superlink_state_host_dir}")
 PY
 }
 
 prepare_host() {
   load_environment; read_clients
-  local role client_id=""
-  role="$(select_host_role)"; export DEPLOYMENT_ROLE="$role"
+  local role client_id=""; role="$(select_host_role)"; export DEPLOYMENT_ROLE="$role"
   ensure_host_dependencies "$role"
-  if [ "$role" = client ]; then client_id="$(select_client_id)"; export CLIENT_ID="$client_id"; fi
-  show_host_context "$role" "$client_id"
-  if [ "$role" = client ]; then
-    if [ "${DEPLOYMENT_PROFILE:-development}" != production ]; then
-      echo "ERROR: Physical client setup requires DEPLOYMENT_PROFILE=production." >&2
-      echo "The development profile uses insecure Flower transport and does not create production credentials." >&2
-      echo "Update .env to use the production profile, then rerun client setup." >&2
-      return 1
-    fi
+  [ "$role" = client ] && { client_id="$(select_client_id)"; export CLIENT_ID="$client_id"; }
+  if [ "${DEPLOYMENT_PROFILE:-development}" = production ]; then
+    [ -n "${SUPERLINK_HOST:-}" ] || { echo "ERROR: Set SUPERLINK_HOST in .env before preparing a production host." >&2; return 1; }
+    prepare_flower_config
   fi
   create_directories "$role" "$client_id"
-  prepare_development_auth
   validate_auth_environment "$role" "$client_id"
-  echo
   echo "Host preparation complete for role=$role${client_id:+, client=$client_id}."
 }
 
 generate_server_compose() {
   load_environment; read_clients; ensure_host_dependencies server; export DEPLOYMENT_ROLE=server
+  [ "${DEPLOYMENT_PROFILE:-development}" = production ] && prepare_flower_config
   python3 scripts/generate_compose.py --config clients.yml --output docker-compose.server.yml --profile "${DEPLOYMENT_PROFILE:-development}" --role server
-  echo "Generated docker-compose.server.yml"
 }
 
 generate_client_compose() {
   load_environment; read_clients; ensure_host_dependencies client; export DEPLOYMENT_ROLE=client
-  local client_id="${CLIENT_ID:-}"
-  [ -n "$client_id" ] || client_id="$(select_client_id)"
-  export CLIENT_ID="$client_id"
+  local client_id="${CLIENT_ID:-}"; [ -n "$client_id" ] || client_id="$(select_client_id)"; export CLIENT_ID="$client_id"
+  [ "${DEPLOYMENT_PROFILE:-development}" = production ] && prepare_flower_config
   python3 scripts/generate_compose.py --config clients.yml --output docker-compose.client.yml --profile "${DEPLOYMENT_PROFILE:-development}" --role client --client-id "$client_id"
-  echo "Generated docker-compose.client.yml for $client_id"
 }
 
-start_server_federation() {
-  generate_server_compose
-  echo "Building the client-registration image from the current source..."
-  docker compose -f docker-compose.server.yml build --no-cache client-registration
-  echo "Starting server infrastructure..."
-  docker compose -f docker-compose.server.yml up -d --build superlink superexec-serverapp
-  if [ "${DEPLOYMENT_PROFILE:-development}" = production ]; then
-    register_configured_clients
-  fi
-  echo "Server infrastructure is running."
+register_configured_clients() {
+  [ "${DEPLOYMENT_PROFILE:-development}" = production ] || return 0
+  local compose_file="${SERVER_COMPOSE_FILE:-docker-compose.server.yml}" auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}"
+  [ -f "$compose_file" ] || { echo "ERROR: Server Compose file not found: $compose_file" >&2; return 1; }
+  read_client_ids; ((${#CLIENT_IDS[@]} >= 2)) || { echo "ERROR: At least 2 clients must be configured." >&2; return 1; }
+  local id; for id in "${CLIENT_IDS[@]}"; do [ -f "$auth_dir/$id.pub" ] || { echo "ERROR: Public key for $id was not found: $auth_dir/$id.pub" >&2; return 1; }; done
+  docker compose -f "$compose_file" run --rm client-registration
 }
 
-start_client_federation() {
-  generate_client_compose
-  echo "Starting client infrastructure..."
-  docker compose -f docker-compose.client.yml up --build
-}
+start_server_federation() { generate_server_compose; docker compose -f docker-compose.server.yml build --no-cache client-registration; docker compose -f docker-compose.server.yml up -d --build superlink superexec-serverapp; register_configured_clients; echo "Server infrastructure is running."; }
+start_client_federation() { generate_client_compose; docker compose -f docker-compose.client.yml up --build; }
 
 run_tests() {
-  read_clients; load_environment; ensure_host_dependencies server
-  export DEPLOYMENT_PROFILE=development DEPLOYMENT_ROLE=all
-  prepare_development_auth
-  validate_auth_environment all
-  local output="${DEV_COMPOSE_FILE:-docker-compose.generated.yml}"
-  python3 scripts/generate_compose.py --config clients.yml --output "$output" --profile development --role all
-  docker compose -f "$output" run --rm test-runner
+  read_clients; load_environment; ensure_host_dependencies server; export DEPLOYMENT_PROFILE=development DEPLOYMENT_ROLE=all
+  python3 scripts/generate_compose.py --config clients.yml --output "${DEV_COMPOSE_FILE:-docker-compose.generated.yml}" --profile development --role all
+  docker compose -f "${DEV_COMPOSE_FILE:-docker-compose.generated.yml}" run --rm test-runner
 }
 
 show_config() {
   load_environment; read_clients
-  echo
-  echo "Deployment profile: ${DEPLOYMENT_PROFILE:-development}"
-  echo "Deployment role:    ${DEPLOYMENT_ROLE:-unset}"
-  echo "Client ID:          ${CLIENT_ID:-unset}"
-  echo "SuperLink:          ${SUPERLINK_ADDRESS:-unset}"
-  echo "Control API:        ${SUPERLINK_CONTROL_ADDRESS:-unset}"
-  echo
+  echo "Deployment profile: ${DEPLOYMENT_PROFILE:-development}"; echo "Deployment role: ${DEPLOYMENT_ROLE:-unset}"; echo "Client ID: ${CLIENT_ID:-unset}"; echo "SuperLink host: ${SUPERLINK_HOST:-unset}"
+  python3 - <<'PY'
+from src.deployment_config import load_deployment_config
+try:
+    c=load_deployment_config()
+    print(f"Fleet API: {c.superlink_address}")
+    print(f"Control API: {c.superlink_control_address}")
+except Exception as exc: print(f"Endpoint derivation unavailable: {exc}")
+PY
   cat clients.yml
 }
 
-run_local_development_compose() {
-  read_clients; load_environment; ensure_host_dependencies server
-  export DEPLOYMENT_PROFILE=development DEPLOYMENT_ROLE=all
-  prepare_development_auth
-  local output="${DEV_COMPOSE_FILE:-docker-compose.generated.yml}"
-  python3 scripts/generate_compose.py --config clients.yml --output "$output" --profile development --role all
-  docker compose -f "$output" up --build
-}
+run_local_development_compose() { read_clients; load_environment; ensure_host_dependencies server; export DEPLOYMENT_PROFILE=development DEPLOYMENT_ROLE=all; python3 scripts/generate_compose.py --config clients.yml --output "${DEV_COMPOSE_FILE:-docker-compose.generated.yml}" --profile development --role all; docker compose -f "${DEV_COMPOSE_FILE:-docker-compose.generated.yml}" up --build; }
 
 main_menu() {
   while true; do
-    echo
-    echo "FederatedHomes Flower deployment setup"
-    echo "  1) Prepare host"
-    echo "  2) Generate server Compose"
-    echo "  3) Generate client Compose"
-    echo "  4) Start server infrastructure"
-    echo "  5) Start client infrastructure"
-    echo "  6) Run tests"
-    echo "  7) Show configuration"
-    echo "  8) Start local all-in-one development federation"
-    echo "  9) Exit"
+    echo; echo "FederatedHomes Flower deployment setup"; echo "  1) Prepare host"; echo "  2) Generate server Compose"; echo "  3) Generate client Compose"; echo "  4) Start server infrastructure"; echo "  5) Start client infrastructure"; echo "  6) Run tests"; echo "  7) Show configuration"; echo "  8) Start local all-in-one development federation"; echo "  9) Exit"
     read -rp "Select an option [1-9]: " option
-    case "$option" in
-      1) prepare_host ;; 2) generate_server_compose ;; 3) generate_client_compose ;; 4) start_server_federation ;; 5) start_client_federation ;; 6) run_tests ;; 7) show_config ;; 8) run_local_development_compose ;; 9) exit 0 ;; *) echo "ERROR: Invalid option. Please choose 1-9." >&2 ;;
-    esac
+    case "$option" in 1) prepare_host ;; 2) generate_server_compose ;; 3) generate_client_compose ;; 4) start_server_federation ;; 5) start_client_federation ;; 6) run_tests ;; 7) show_config ;; 8) run_local_development_compose ;; 9) exit 0 ;; *) echo "ERROR: Invalid option." >&2 ;; esac
   done
 }
 
