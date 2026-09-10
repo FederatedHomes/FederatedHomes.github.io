@@ -13,6 +13,19 @@ Use this document for:
 
 For two or more physical client machines, use `DISTRIBUTED_DEPLOYMENT.md` instead.
 
+## Source of truth
+
+This is an **operational procedure**, not a second configuration specification. Use the repository implementation as the authority for values and behavior:
+
+- `setup.sh` — setup menu and host workflows;
+- `src/deployment_config.py` — deployment roles, profiles, validation, and production security invariants;
+- `clients.yml` — client inventory used for generated Compose configuration;
+- `scripts/generate_compose.py` — generated service topology;
+- `.flwr/config.toml` — Flower execution profiles;
+- `tests/` — automated validation behavior.
+
+If a command, service name, or configuration default changes in the implementation, update this runbook as part of the same change. Avoid copying configuration defaults here when a reference to the authoritative file is sufficient.
+
 ## Prerequisites
 
 The host should provide:
@@ -33,17 +46,18 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The interactive menu provides the local/development operations alongside the deployment operations:
+The current interactive menu provides:
 
 ```text
 1) Prepare host
 2) Generate server Compose
 3) Generate client Compose
 4) Start server infrastructure
-5) Run tests
-6) Show config
-7) Start local all-in-one development
-8) Exit
+5) Start client infrastructure
+6) Run tests
+7) Show configuration
+8) Start local all-in-one development federation
+9) Exit
 ```
 
 For local development, the relevant path is normally host preparation, testing, and the local all-in-one development option. The exact generated services depend on the selected configuration.

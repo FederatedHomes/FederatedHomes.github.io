@@ -33,7 +33,33 @@ The current architecture also includes a production-oriented security layer for 
 
 The current ServerApp also applies a minimum-success policy for aggregation: with three sampled clients, `3/3` and `2/3` successful responses may proceed, while `1/3` or `0/3` causes the round to abort.
 
-Runtime/AppIO TLS, secure aggregation, differential privacy, stronger poisoning defenses, expanded audit logging, and additional production hardening remain planned areas of work.
+Runtime/AppIO TLS, secure aggregation, differential privacy, stronger poisoning defenses, expanded audit logging, and additional production hardening remain **planned**; they are not implied by the current TLS and authentication controls.
+
+## Quick navigation
+
+| Goal | Start here |
+|---|---|
+| Understand the system and current status | `README.md` |
+| Run tests or a single-host federation | [`LOCAL_DEPLOYMENT.md`](LOCAL_DEPLOYMENT.md) |
+| Deploy across physical server/client hosts | [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) |
+| Understand security requirements and trust boundaries | [`SECURITY.md`](SECURITY.md) |
+| Understand documentation ownership and source-of-truth rules | [`DOCUMENTATION_GOVERNANCE.md`](DOCUMENTATION_GOVERNANCE.md) |
+
+## Documentation model
+
+The project documentation deliberately separates **what the system is**, **how it is deployed**, and **how it is secured**:
+
+| Document | Purpose |
+|---|---|
+| `README.md` | Executive project summary, architecture, current status, major components, and design intent |
+| `LOCAL_DEPLOYMENT.md` | Local development, testing, single-host Docker federation, and direct host execution |
+| `DISTRIBUTED_DEPLOYMENT.md` | Operational deployment across two or more physical client hosts |
+| `SECURITY.md` | Security architecture, trust boundaries, TLS, authentication, credential handling, and security requirements |
+| `DOCUMENTATION_GOVERNANCE.md` | Documentation ownership, terminology, authoritative sources, and maintenance rules |
+
+> **README explains. Deployment instructs. Security specifies and constrains.**
+
+Detailed commands, environment preparation, Compose generation, registration, startup sequences, and troubleshooting belong in the deployment documents rather than in this executive summary.
 
 ## Architecture
 
@@ -144,7 +170,8 @@ machine_learning/
 ├── requirements.txt             Runtime dependencies for the custom image
 ├── LOCAL_DEPLOYMENT.md          Local development and single-host procedures
 ├── DISTRIBUTED_DEPLOYMENT.md    Physical multi-host deployment runbook
-└── SECURITY.md                  Security architecture and policy
+├── SECURITY.md                  Security architecture and policy
+└── DOCUMENTATION_GOVERNANCE.md  Documentation ownership and maintenance rules
 ```
 
 ### Key application components
@@ -174,20 +201,13 @@ A production-style federation separates the server infrastructure from physical 
 
 See [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) for the complete operational runbook covering host preparation, TLS, authentication identities, registration, Compose generation, networking, startup, verification, resilience acceptance tests, state persistence, and troubleshooting.
 
-## Documentation model
+## Compatibility and revision policy
 
-The project documentation deliberately separates **what the system is**, **how it is deployed**, and **how it is secured**:
+The documented deployment baseline is **Flower 1.33.0**, Python 3, and Docker Compose v2. The exact Python/ML dependency versions remain authoritative in the project dependency files and container definitions rather than being duplicated here.
 
-| Document | Purpose |
-|---|---|
-| `README.md` | Executive project summary, architecture, current status, major components, and design intent |
-| `LOCAL_DEPLOYMENT.md` | Local development, testing, single-host Docker federation, and direct host execution |
-| `DISTRIBUTED_DEPLOYMENT.md` | Operational deployment across two or more physical client hosts |
-| `SECURITY.md` | Security architecture, trust boundaries, TLS, authentication, credential handling, and security requirements |
+All physical federation hosts must use the **same Git revision** of the application and deployment scripts. The distributed runbook defines the revision synchronization procedure.
 
-> **README explains. Deployment instructs. Security specifies and constrains.**
-
-Setup commands, environment preparation, Compose generation, registration procedures, startup sequences, and troubleshooting belong in the deployment documents rather than in this executive summary.
+The checked-in production Flower profile in `.flwr/config.toml` contains a deployment-specific Control API endpoint. When deploying to another network, that endpoint must be changed to the actual server-reachable Control API address and its certificate SAN must match the address used by the trainer.
 
 ## Project direction
 
