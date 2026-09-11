@@ -208,7 +208,6 @@ def main() -> None:
     clients = config.get("clients", [])
     compose = build_compose(clients, profile=args.profile, role=args.role, client_id=args.client_id)
     output_path.write_text(render_compose(compose), encoding="utf-8")
-    print(f"Generated {output_path}")
 
 
 if __name__ == "__main__":
