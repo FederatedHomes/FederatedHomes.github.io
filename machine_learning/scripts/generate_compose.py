@@ -24,6 +24,7 @@ SUPEREXEC_IMAGE = "flwr_superexec:local"
 SUPEREXEC_BUILD = {"context": ".", "dockerfile": "Dockerfile.superexec"}
 TLS_CONTAINER_DIR = "/etc/flower/tls"
 AUTH_CONTAINER_DIR = "/etc/flower/auth"
+REGISTRY_STATE_CONTAINER_DIR = "/app/state"
 DEPLOYMENT_ROLE_ENV = "DEPLOYMENT_ROLE"
 CLIENT_ID_ENV = "CLIENT_ID"
 
@@ -76,8 +77,6 @@ def build_compose(
     if role not in {"all", "server", "client"}:
         raise ValueError("Deployment role must be one of: all, server, client.")
 
-    # Resolve role-specific arguments before loading production environment
-    # configuration so callers receive the most actionable validation error.
     resolved_client_id = None
     if role == "client":
         resolved_client_id = (client_id or os.environ.get(CLIENT_ID_ENV, "")).strip()
@@ -167,11 +166,14 @@ def build_compose(
         }
 
         if config.is_production:
+            assert config.superlink_state_host_dir is not None
+            state_host_dir = compose_host_path(config.superlink_state_host_dir)
             registration_volumes = [
                 "./.flwr:/app/.flwr:ro",
                 "./clients.yml:/app/clients.yml:ro",
                 f"{host_tls_dir}/ca.crt:/app/certificates/prod/tls/ca.crt:ro",
                 f"{host_auth_dir}:/app/certificates/prod/auth:ro",
+                f"{state_host_dir}:{REGISTRY_STATE_CONTAINER_DIR}:rw",
             ]
             services["client-registration"] = {
                 "image": REGISTRATION_IMAGE,
@@ -259,7 +261,7 @@ def main() -> None:
     clients = config.get("clients", [])
     compose = build_compose(clients, profile=args.profile, role=args.role, client_id=args.client_id)
     output_path.write_text(render_compose(compose), encoding="utf-8")
-    print(f"Generated {output_path} for {len(compose['services'])} services ({args.profile}, {args.role} role).")
+    print(f"Generated {output_path}")
 
 
 if __name__ == "__main__":
