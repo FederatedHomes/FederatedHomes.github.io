@@ -4,13 +4,10 @@ This document defines how the documentation under `machine_learning/` is organiz
 
 ## Documentation ownership
 
-The documentation follows a clear separation of concern:
-
 | Document | Owns | Does not own |
 |---|---|---|
 | `README.md` | Executive summary, architecture, status, navigation, design intent | Detailed deployment commands or security policy |
-| `LOCAL_DEPLOYMENT.md` | Single-host development, testing, local federation, cleanup | Production security policy |
-| `DISTRIBUTED_DEPLOYMENT.md` | Physical multi-host deployment procedure and acceptance workflow | Authoritative security policy or configuration defaults |
+| `DEPLOYMENT.md` | Local distributed development and production deployment procedure | Authoritative security policy |
 | `SECURITY.md` | Security objectives, trust model, controls, credential policy and limitations | Step-by-step deployment procedure |
 | `CONFIGURATION.md` | Configuration reference and semantics | Application behavior or security policy |
 | `OPERATIONS.md` | Post-deployment lifecycle and operational procedures | Architecture definition |
@@ -23,14 +20,12 @@ The last two documents are planned follow-on documentation; they are not yet pre
 
 Documentation describes the implementation; it must not become a competing source of configuration or behavior.
 
-Use these repository artifacts as the authoritative sources for the corresponding facts:
-
 | Concern | Authoritative source |
 |---|---|
 | Python/package dependencies | `pyproject.toml`, `requirements.txt`, Dockerfiles |
-| Deployment environment variables and example defaults | `.env.production.example` and related environment examples |
-| Deployment profile validation and production security invariants | `src/deployment_config.py` |
-| Flower deployment profiles | `.flwr/config.toml` |
+| Deployment environment variables and example defaults | `.example.env` |
+| Deployment profile validation and security invariants | `src/deployment_config.py` |
+| Flower deployment profile | `.flwr/config.toml` |
 | Federation client inventory | `clients.yml` |
 | Generated deployment topology | `scripts/generate_compose.py` |
 | Client registration behavior | `scripts/client_registration.py` |
@@ -48,12 +43,12 @@ Use these terms consistently:
 - **SuperNode** — Flower node running on a client host and connecting to the SuperLink Fleet API.
 - **ServerApp** — server-side Flower application responsible for orchestration/aggregation behavior.
 - **ClientApp** — client-side Flower application responsible for local training.
-- **Fleet API** — SuperLink endpoint used by SuperNodes for federated communication (`9092` in the current deployment).
-- **Control API** — SuperLink endpoint used by control/registration workflows (`9093` in the current deployment).
-- **Runtime/AppIO** — internal Flower execution paths; current deployment uses `9091` and `9094` locally.
+- **Fleet API** — SuperLink endpoint used by SuperNodes for federated communication (`9092`).
+- **Control API** — SuperLink endpoint used by control/registration workflows (`9093`).
+- **Runtime/AppIO** — internal Flower execution paths (`9091` and `9094` in the current deployment).
 - **DataContract** — shared model-facing data/schema contract enforced before local training.
-- **Deployment profile** — explicit `development` or `production` configuration selected by `DEPLOYMENT_PROFILE`.
-- **Deployment role** — `server`, `client`, or `all`, selected through `DEPLOYMENT_ROLE` where applicable.
+- **Deployment profile** — the single secure `production` Flower configuration. Local development uses this same profile with generated starter credentials.
+- **Deployment role** — `server` or `client`, selected through `DEPLOYMENT_ROLE`.
 
 Do not use “client” to mean both a physical host and a Flower ClientApp when the distinction matters; use **client host**, **SuperNode**, or **ClientApp** explicitly.
 
