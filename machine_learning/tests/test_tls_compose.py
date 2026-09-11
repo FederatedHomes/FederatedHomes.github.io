@@ -89,6 +89,13 @@ def test_production_compose_uses_tls_and_authentication(monkeypatch: pytest.Monk
         f"{tmp_path}/ca.crt:/etc/flower/tls/ca.crt:ro",
         f"{tmp_path / 'auth-host'}:/etc/flower/auth:ro",
     ]
+    assert compose["services"]["client-registration"]["volumes"] == [
+        "./.flwr:/app/.flwr:ro",
+        "./clients.yml:/app/clients.yml:ro",
+        f"{tmp_path}/ca.crt:/app/certificates/prod/tls/ca.crt:ro",
+        f"{tmp_path / 'auth-host'}:/app/certificates/prod/auth:ro",
+        f"{tmp_path}/state/superlink:/app/state:rw",
+    ]
     assert compose["services"]["trainer"]["command"][2] == "production-deployment"
 
 
