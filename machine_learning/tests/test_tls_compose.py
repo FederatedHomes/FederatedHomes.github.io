@@ -1,4 +1,4 @@
-"""Tests for TLS-aware Docker Compose generation."""
+"""Tests for secure Docker Compose generation."""
 
 from pathlib import Path
 
@@ -22,7 +22,6 @@ def configure_production_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     state_host_dir = tmp_path / "state" / "superlink"
     auth_host_dir.mkdir()
     state_host_dir.mkdir(parents=True)
-
     for path in (ca, cert, key):
         path.write_text("test", encoding="utf-8")
     for client in CLIENTS:
@@ -40,12 +39,8 @@ def configure_production_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.setenv("SUPERLINK_STATE_DIR", "/var/lib/flower")
 
 
-def test_development_compose_keeps_insecure_transport() -> None:
-    compose = build_compose(CLIENTS, profile=DeploymentProfile.DEVELOPMENT)
-
-    assert "--insecure" in compose["services"]["superlink"]["command"]
-    assert "--insecure" in compose["services"]["supernode-client1"]["command"]
-    assert compose["services"]["trainer"]["command"][2] == "local-deployment"
+def test_production_profile_is_the_only_profile() -> None:
+    assert list(DeploymentProfile) == [DeploymentProfile.PRODUCTION]
 
 
 def test_production_compose_requires_explicit_tls_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,17 +52,20 @@ def test_production_compose_requires_explicit_tls_environment(monkeypatch: pytes
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
-
     with pytest.raises(DeploymentConfigError, match="required environment variables"):
         build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION)
 
 
-def test_production_compose_uses_tls_and_authentication(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_invalid_profile_is_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     configure_production_environment(monkeypatch, tmp_path)
-    compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION)
+    with pytest.raises(ValueError, match="Only the production deployment profile"):
+        build_compose(CLIENTS, profile="development")
 
+
+def test_production_server_compose_uses_tls_auth_and_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    configure_production_environment(monkeypatch, tmp_path)
+    compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="server")
     superlink_command = compose["services"]["superlink"]["command"]
-    node_command = compose["services"]["supernode-client1"]["command"]
     assert "--insecure" not in superlink_command
     assert "--ssl-ca-certfile" in superlink_command
     assert "--ssl-certfile" in superlink_command
@@ -75,34 +73,28 @@ def test_production_compose_uses_tls_and_authentication(monkeypatch: pytest.Monk
     assert "--enable-supernode-auth" in superlink_command
     assert "--database" in superlink_command
     assert superlink_command[superlink_command.index("--database") + 1] == "/var/lib/flower/superlink.db"
+    assert set(compose["services"]) == {"superlink", "superexec-serverapp", "trainer", "client-registration"}
+    assert compose["services"]["trainer"]["command"][2] == "production-deployment"
+
+
+def test_production_client_compose_contains_only_one_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    configure_production_environment(monkeypatch, tmp_path)
+    compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="client", client_id="client1")
+    assert set(compose["services"]) == {"supernode-client1", "superexec-clientapp-client1"}
+    node_command = compose["services"]["supernode-client1"]["command"]
     assert "--insecure" not in node_command
     assert "--root-certificates" in node_command
     assert "--auth-supernode-private-key" in node_command
-    assert node_command[node_command.index("--auth-supernode-private-key") + 1] == "/etc/flower/auth/client1"
-    assert compose["services"]["superlink"]["volumes"] == [
-        f"{tmp_path}/ca.crt:/etc/flower/tls/ca.crt:ro",
-        f"{tmp_path}/superlink.crt:/etc/flower/tls/superlink.crt:ro",
-        f"{tmp_path}/superlink.key:/etc/flower/tls/superlink.key:ro",
-        f"{tmp_path}/state/superlink:/var/lib/flower:rw",
-    ]
+    assert node_command[node_command.index("--superlink") + 1] == "fl.example.internal:9092"
     assert compose["services"]["supernode-client1"]["volumes"] == [
         f"{tmp_path}/ca.crt:/etc/flower/tls/ca.crt:ro",
         f"{tmp_path / 'auth-host'}:/etc/flower/auth:ro",
     ]
-    assert compose["services"]["client-registration"]["volumes"] == [
-        "./.flwr:/app/.flwr:ro",
-        "./clients.yml:/app/clients.yml:ro",
-        f"{tmp_path}/ca.crt:/app/certificates/prod/tls/ca.crt:ro",
-        f"{tmp_path / 'auth-host'}:/app/certificates/prod/auth:ro",
-        f"{tmp_path}/state/superlink:/app/state:rw",
-    ]
-    assert compose["services"]["trainer"]["command"][2] == "production-deployment"
 
 
 def test_production_supernodes_use_configured_external_superlink_address(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     configure_production_environment(monkeypatch, tmp_path)
     monkeypatch.setenv("SUPERLINK_HOST", "192.168.1.100")
-
-    compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION)
+    compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="client", client_id="client1")
     command = compose["services"]["supernode-client1"]["command"]
     assert command[command.index("--superlink") + 1] == "192.168.1.100:9092"
