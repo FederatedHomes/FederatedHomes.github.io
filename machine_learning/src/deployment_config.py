@@ -159,11 +159,17 @@ def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_
 
     if require_files:
         missing_files: list[str] = []
-        if not tls_root.is_file():
+        # TLS_ROOT_CERTIFICATES and the server certificate/key are container paths
+        # from .env. During setup they must therefore be validated against the
+        # corresponding host-mounted directory, not the container filesystem.
+        if not (tls_host_dir / "ca.crt").is_file():
             missing_files.append(f"TLS_ROOT_CERTIFICATES={tls_root}")
         if resolved_role == "server":
-            for name, path in (("SUPERLINK_CERTIFICATE", certificate), ("SUPERLINK_PRIVATE_KEY", private_key)):
-                if path is None or not path.is_file():
+            for name, filename, path in (
+                ("SUPERLINK_CERTIFICATE", "superlink.crt", certificate),
+                ("SUPERLINK_PRIVATE_KEY", "superlink.key", private_key),
+            ):
+                if path is None or not (tls_host_dir / filename).is_file():
                     missing_files.append(f"{name}={path}")
             if state_host_dir is None or not state_host_dir.is_dir():
                 missing_files.append(f"SUPERLINK_STATE_HOST_DIR={state_host_dir}")
