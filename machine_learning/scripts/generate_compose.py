@@ -90,16 +90,13 @@ def build_compose(
         if not selected_clients:
             raise ValueError(f"Client ID '{resolved_client_id}' is not defined in clients.yml.")
 
-    superlink_command = [*config.superlink_tls_args(), *config.superlink_auth_args(), *config.superlink_state_args()]
-    supernode_prefix = config.supernode_tls_args()
-    validate_no_insecure_flag(config.profile, superlink_command)
-    validate_no_insecure_flag(config.profile, supernode_prefix)
-
     host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod/tls")
     host_auth_dir = os.environ.get("SUPERNODE_AUTH_HOST_DIR", "./certificates/prod/auth")
     services: dict[str, dict] = {}
 
     if role == "server":
+        superlink_command = [*config.superlink_tls_args(), *config.superlink_auth_args(), *config.superlink_state_args()]
+        validate_no_insecure_flag(config.profile, superlink_command)
         state_host_dir = compose_host_path(config.superlink_state_host_dir)
         services["superlink"] = {
             "image": "flwr/superlink:1.33.0",
@@ -134,7 +131,6 @@ def build_compose(
             "networks": ["flwr-network"],
             "depends_on": ["superlink", "superexec-serverapp"],
         }
-        state_host_dir = compose_host_path(config.superlink_state_host_dir)
         services["client-registration"] = {
             "image": REGISTRATION_IMAGE,
             "build": dict(REGISTRATION_BUILD),
@@ -155,6 +151,7 @@ def build_compose(
         current_client_id = str(selected_clients[0]["id"]).strip()
         node = node_name(current_client_id)
         app = app_name(current_client_id)
+        supernode_prefix = config.supernode_tls_args()
         node_command = [
             *supernode_prefix,
             "--superlink", config.superlink_address,
@@ -162,6 +159,7 @@ def build_compose(
             "--isolation", "process",
             *config.supernode_auth_args(current_client_id),
         ]
+        validate_no_insecure_flag(config.profile, supernode_prefix)
         validate_no_insecure_flag(config.profile, node_command)
         services[node] = {
             "image": SUPERNODE_IMAGE,
