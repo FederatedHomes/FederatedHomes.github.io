@@ -16,17 +16,15 @@ load_environment() {
   set +a
 }
 
-read_clients() {
-  [ -f clients.yml ] || { echo "ERROR: clients.yml not found." >&2; return 1; }
-}
+read_clients() { [ -f clients.yml ] || { echo "ERROR: clients.yml not found." >&2; return 1; }; }
 
 ensure_host_dependencies() {
   local role="${1:-server}" missing_commands=()
   command -v python3 >/dev/null 2>&1 || missing_commands+=("python3")
   command -v docker >/dev/null 2>&1 || missing_commands+=("docker")
   if command -v docker >/dev/null 2>&1 && ! docker compose version >/dev/null 2>&1; then missing_commands+=("docker compose"); fi
-  if [ "$role" = server ] && ! command -v openssl >/dev/null 2>&1; then missing_commands+=("openssl"); fi
-  if [ "$role" = client ] && ! command -v ssh-keygen >/dev/null 2>&1; then missing_commands+=("ssh-keygen"); fi
+  if [ "$role" = server ] && ! command -v openssl >/dev/null 2>&1; then missing_commands+=("openssl")
+  elif [ "$role" = client ] && ! command -v ssh-keygen >/dev/null 2>&1; then missing_commands+=("ssh-keygen"); fi
   if ((${#missing_commands[@]})); then echo "Missing required host tools: ${missing_commands[*]}" >&2; return 1; fi
   if ! python3 -c 'import yaml' >/dev/null 2>&1; then
     echo "Missing required Python library: PyYAML" >&2
@@ -66,8 +64,7 @@ select_host_role() {
 
 select_client_id() {
   [ -n "${CLIENT_ID:-}" ] && { echo "$CLIENT_ID"; return; }
-  read_client_ids
-  ((${#CLIENT_IDS[@]})) || { echo "ERROR: No clients are configured." >&2; return 1; }
+  read_client_ids; ((${#CLIENT_IDS[@]})) || { echo "ERROR: No clients are configured." >&2; return 1; }
   echo "Select the client assigned to this machine:" >&2
   local i=1 id
   for id in "${CLIENT_IDS[@]}"; do printf '  %s) %s\n' "$i" "$id" >&2; i=$((i+1)); done
@@ -88,38 +85,45 @@ create_starter_tls_material() {
   [ -n "$starter_host" ] || { echo "ERROR: SUPERLINK_HOST must be set before server preparation." >&2; return 1; }
   mkdir -p "$tls_dir"
   local ca_key="$tls_dir/.starter-ca.key" ca_crt="$tls_dir/ca.crt" superlink_key="$tls_dir/superlink.key" superlink_crt="$tls_dir/superlink.crt" csr="$tls_dir/.starter-superlink.csr" ext="$tls_dir/.starter-superlink.ext"
-  if [ ! -f "$ca_crt" ] || [ ! -f "$superlink_crt" ] || [ ! -f "$superlink_key" ]; then
-    echo "Creating starter federation TLS material for $starter_host..."
-    rm -f "$ca_key" "$superlink_key" "$superlink_crt" "$csr" "$ext"
-    openssl genrsa -out "$ca_key" 4096 >/dev/null 2>&1
-    openssl req -x509 -new -nodes -key "$ca_key" -sha256 -days 3650 -out "$ca_crt" -subj "/CN=FederatedHomes Starter CA" >/dev/null 2>&1
-    openssl genrsa -out "$superlink_key" 2048 >/dev/null 2>&1
-    openssl req -new -key "$superlink_key" -out "$csr" -subj "/CN=$starter_host" >/dev/null 2>&1
-    if [[ "$starter_host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=IP:%s,DNS:localhost,IP:127.0.0.1\n' "$starter_host" > "$ext"
-    else
-      printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:%s,DNS:localhost,IP:127.0.0.1\n' "$starter_host" > "$ext"
-    fi
-    openssl x509 -req -in "$csr" -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial -out "$superlink_crt" -days 825 -sha256 -extfile "$ext" >/dev/null 2>&1
-    rm -f "$csr" "$ext" "$tls_dir/ca.srl" "$ca_key"
+  if [ -f "$ca_crt" ] && [ -f "$superlink_crt" ] && [ -f "$superlink_key" ]; then
+    chmod 644 "$ca_crt" "$superlink_crt"; chmod 600 "$superlink_key"
+    echo "Existing TLS material detected; preserving it in $tls_dir."
+    return 0
   fi
-  chmod 644 "$ca_crt" "$superlink_crt"
-  chmod 600 "$superlink_key"
+  if [ -f "$ca_crt" ] || [ -f "$superlink_crt" ] || [ -f "$superlink_key" ]; then
+    echo "ERROR: Incomplete TLS material exists in $tls_dir. Refusing to overwrite existing credential material." >&2
+    return 1
+  fi
+  echo "Creating starter federation TLS material for $starter_host..."
+  openssl genrsa -out "$ca_key" 4096 >/dev/null 2>&1
+  openssl req -x509 -new -nodes -key "$ca_key" -sha256 -days 3650 -out "$ca_crt" -subj "/CN=FederatedHomes Starter CA" >/dev/null 2>&1
+  openssl genrsa -out "$superlink_key" 2048 >/dev/null 2>&1
+  openssl req -new -key "$superlink_key" -out "$csr" -subj "/CN=$starter_host" >/dev/null 2>&1
+  if [[ "$starter_host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=IP:%s,DNS:localhost,IP:127.0.0.1\n' "$starter_host" > "$ext"
+  else
+    printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:%s,DNS:localhost,IP:127.0.0.1\n' "$starter_host" > "$ext"
+  fi
+  openssl x509 -req -in "$csr" -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial -out "$superlink_crt" -days 825 -sha256 -extfile "$ext" >/dev/null 2>&1
+  rm -f "$csr" "$ext" "$tls_dir/ca.srl" "$ca_key"
+  chmod 644 "$ca_crt" "$superlink_crt"; chmod 600 "$superlink_key"
   echo "Server TLS material is ready in $tls_dir."
   echo "WARNING: Starter TLS credentials are for development/testing only; replace them with federation-approved production credentials before production deployment."
   echo "Share only ca.crt with client hosts."
 }
 
 create_starter_client_auth() {
-  local client_id="$1"
-  local auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}"
-  local private_key="$auth_dir/$client_id"
-  local public_key="$auth_dir/$client_id.pub"
-  require_client_ca_certificate
-  mkdir -p "$auth_dir"
+  local client_id="$1" auth_dir="${SUPERNODE_AUTH_HOST_DIR:-./certificates/prod/auth}"
+  local private_key="$auth_dir/$client_id" public_key="$auth_dir/$client_id.pub"
+  require_client_ca_certificate; mkdir -p "$auth_dir"
+  if [ -f "$private_key" ] && [ -f "$public_key" ]; then
+    chmod 600 "$private_key"; chmod 644 "$public_key"
+    echo "Existing SuperNode authentication material detected for $client_id; preserving it."
+    return 0
+  fi
   if [ -f "$private_key" ] || [ -f "$public_key" ]; then
-    [ -f "$private_key" ] && [ -f "$public_key" ] || { echo "ERROR: Incomplete SuperNode authentication key pair for $client_id." >&2; return 1; }
-    chmod 600 "$private_key"; chmod 644 "$public_key"; return 0
+    echo "ERROR: Incomplete SuperNode authentication key pair for $client_id. Refusing to overwrite existing credential material." >&2
+    return 1
   fi
   echo "Creating starter SuperNode authentication key pair for $client_id..."
   ssh-keygen -q -t ecdsa -b 384 -f "$private_key" -N "" -C "flower-supernode-$client_id"
@@ -186,9 +190,7 @@ prepare_host() {
   ensure_host_dependencies "$role"
   [ "$role" = client ] && { client_id="$(select_client_id)"; export CLIENT_ID="$client_id"; }
   [ -n "${SUPERLINK_HOST:-}" ] || { echo "ERROR: Set SUPERLINK_HOST in .env before preparing a host." >&2; return 1; }
-  prepare_flower_config
-  create_directories "$role" "$client_id"
-  validate_auth_environment "$role" "$client_id"
+  prepare_flower_config; create_directories "$role" "$client_id"; validate_auth_environment "$role" "$client_id"
   echo "Host preparation complete for role=$role${client_id:+, client=$client_id}."
 }
 
@@ -223,22 +225,17 @@ start_server_federation() {
   echo "Server infrastructure is running. Start the trainer after the required clients are online."
 }
 
-start_client_federation() {
-  generate_client_compose
-  docker compose -f docker-compose.client.yml up --build
-}
+start_client_federation() { generate_client_compose; docker compose -f docker-compose.client.yml up --build; }
 
 run_tests() {
   load_environment; read_clients; require_production_profile; ensure_host_dependencies server
-  python3 -m pytest tests/ -v
+  docker build -f Dockerfile.superexec -t flwr_superexec:local .
+  docker run --rm --entrypoint pytest -e PYTHONPATH=/app -v "$ROOT_DIR:/app" -w /app flwr_superexec:local tests/ -v
 }
 
 show_config() {
   load_environment; read_clients
-  echo "Deployment profile: production"
-  echo "Deployment role: ${DEPLOYMENT_ROLE:-unset}"
-  echo "Client ID: ${CLIENT_ID:-unset}"
-  echo "SuperLink host: ${SUPERLINK_HOST:-unset}"
+  echo "Deployment profile: production"; echo "Deployment role: ${DEPLOYMENT_ROLE:-unset}"; echo "Client ID: ${CLIENT_ID:-unset}"; echo "SuperLink host: ${SUPERLINK_HOST:-unset}"
   python3 - <<'PY'
 from src.deployment_config import load_deployment_config
 try:
