@@ -22,7 +22,6 @@ def production_client_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     (tls_dir / "ca.crt").write_text("test", encoding="utf-8")
     for client in CLIENTS:
         (auth_dir / client["id"]).write_text("test", encoding="utf-8")
-
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
     monkeypatch.setenv("SUPERLINK_HOST", "192.168.1.100")
     monkeypatch.setenv("TLS_ROOT_CERTIFICATES", "/etc/flower/tls/ca.crt")
@@ -45,16 +44,8 @@ def production_server_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 
 def test_server_role_contains_server_and_federation_services(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     production_server_env(monkeypatch, tmp_path)
-    compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="server")
-    services = compose["services"]
-
-    assert set(services) == {
-        "superlink",
-        "superexec-serverapp",
-        "trainer",
-        "client-registration",
-    }
-    assert "test-runner" not in services
+    services = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="server")["services"]
+    assert set(services) == {"superlink", "superexec-serverapp", "trainer", "client-registration"}
     assert not any(name.startswith("supernode-") for name in services)
     assert not any(name.startswith("superexec-clientapp-") for name in services)
 
@@ -67,17 +58,8 @@ def test_client_role_requires_client_id(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 def test_client_role_contains_only_selected_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     production_client_env(monkeypatch, tmp_path)
-    compose = build_compose(
-        CLIENTS,
-        profile=DeploymentProfile.PRODUCTION,
-        role="client",
-        client_id="client-2",
-    )
-    services = compose["services"]
-
+    services = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="client", client_id="client-2")["services"]
     assert set(services) == {"supernode-client-2", "superexec-clientapp-client-2"}
-    assert "superlink" not in services
-    assert "trainer" not in services
     node_command = services["supernode-client-2"]["command"]
     assert node_command[node_command.index("--superlink") + 1] == "192.168.1.100:9092"
     assert "--insecure" not in node_command
@@ -85,10 +67,6 @@ def test_client_role_contains_only_selected_client(monkeypatch: pytest.MonkeyPat
 
 def test_client_role_does_not_require_server_certificate_or_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     production_client_env(monkeypatch, tmp_path)
-    compose = build_compose(
-        CLIENTS,
-        profile=DeploymentProfile.PRODUCTION,
-        role="client",
-        client_id="client-1",
-    )
+    compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="client", client_id="client-1")
     assert "supernode-client-1" in compose["services"]
+    assert "superexec-clientapp-client-1" in compose["services"]
