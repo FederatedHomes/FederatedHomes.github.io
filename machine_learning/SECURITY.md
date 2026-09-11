@@ -1,121 +1,78 @@
 # Security Architecture and Policy
 
-This document defines the security model, trust boundaries, credential policy, authentication controls, and production security requirements for the federated learning framework.
-
-It is intentionally **not** a deployment runbook. Concrete server/client setup, certificate copying, Compose commands, startup order, network setup, verification, and troubleshooting belong in `DISTRIBUTED_DEPLOYMENT.md`.
-
-Project overview and local development guidance belong in `README.md`.
+This document defines the security model, trust boundaries, credential policy, authentication controls, and production security requirements for the federated learning framework. It is the security specification; operational commands and deployment procedures belong in `DEPLOYMENT.md`.
 
 ## 1. Security objectives
 
-The distributed federation must provide the following security properties:
+The distributed federation must provide:
 
-1. **Authenticated server endpoint** — production SuperNodes must verify that they are connecting to the intended SuperLink.
-2. **Encrypted federated transport** — production SuperNode ↔ SuperLink Fleet communication must use TLS.
-3. **Authenticated SuperNodes** — only registered SuperNode identities may participate in the production federation.
-4. **Credential isolation** — each physical client receives only the credentials required for its own identity and operation.
-5. **Server private-key protection** — the SuperLink private key must remain on the server and must never be distributed to clients.
-6. **Persistent authorization state** — registered SuperNode identities must survive SuperLink container recreation.
-7. **No accidental production downgrade** — production Fleet configuration must reject Flower's `--insecure` transport setting.
-8. **Separation of trust domains** — Docker-internal Runtime/AppIO communication must not be confused with the externally reachable Fleet and Control APIs.
+1. **Authenticated server endpoint** — SuperNodes verify the intended SuperLink.
+2. **Encrypted federated transport** — SuperNode ↔ SuperLink Fleet communication uses TLS.
+3. **Authenticated SuperNodes** — only registered SuperNode identities may participate.
+4. **Credential isolation** — each client host receives only the credentials required for its own identity.
+5. **Server private-key protection** — the SuperLink private key remains on the server.
+6. **Persistent authorization state** — registered identities survive SuperLink container recreation when state is retained.
+7. **No insecure downgrade** — distributed Fleet configuration must reject Flower's `--insecure` option.
+8. **Trust-boundary separation** — internal Runtime/AppIO paths are distinct from Fleet and Control APIs.
 
-These objectives describe the security controls implemented by the current deployment. They do not claim that the entire application is production-hardened against every possible threat.
+These controls do not imply that the entire application is hardened against every possible threat.
 
-## 2. Deployment security profiles
+## 2. One deployment profile
 
-The application has two explicit deployment profiles:
-
-| Profile | Intended use | Fleet transport | SuperNode authentication | Persistent SuperLink state |
-|---|---|---|---|---|
-| `development` | Local development/integration | May use `--insecure` | Development configuration | Optional |
-| `production` | Distributed federation | TLS required | Required | Required |
-
-The default profile is `development` so local development remains convenient and explicit.
-
-Production configuration must be selected deliberately with:
+The framework has one Flower deployment profile:
 
 ```dotenv
 DEPLOYMENT_PROFILE=production
 ```
 
-The production deployment configuration rejects `--insecure` for the production Fleet commands. A deployment must not work around this validation to make an otherwise incorrect TLS configuration operate.
+The profile means the **secure distributed deployment configuration**. It is used for both local distributed development and production.
+
+The credential source differs:
+
+| Use | Deployment topology | Credential source |
+|---|---|---|
+| Local distributed development | Secure distributed | Generated starter credentials |
+| Production | Secure distributed | Federation-approved credentials |
+
+There is no insecure development profile and no `local-deployment` Flower profile.
 
 ## 3. Trust boundaries
 
-The current architecture contains several distinct communication boundaries:
-
 ```text
-                         SERVER TRUST DOMAIN
-
-                    +-----------------------+
-                    |       SuperLink       |
-                    |                       |
-                    |  9091 Runtime        |
-                    |  9092 Fleet          |
-                    |  9093 Control        |
-                    +----------+------------+
-                               |
-                     TLS + SuperNode auth
-                               |
-              +----------------+----------------+
-              |                                 |
-       CLIENT TRUST DOMAIN               CLIENT TRUST DOMAIN
-              |                                 |
-        +-----------+                     +-----------+
-        | SuperNode |                     | SuperNode |
-        | client-1  |                     | client-2  |
-        +-----+-----+                     +-----+-----+
-              |                                 |
-        local ClientApp                    local ClientApp
-              |                                 |
-           9094                              9094
+                         SERVER HOST
+                 +-----------------------+
+                 |       SuperLink       |
+                 | Fleet API   :9092     |
+                 | Control API :9093      |
+                 | Runtime     :9091     |
+                 +-----------+-----------+
+                             |
+                    TLS + authentication
+                             |
+              +--------------+--------------+
+              |              |              |
+              v              v              v
+          CLIENT 1       CLIENT 2       CLIENT 3
+          SuperNode      SuperNode      SuperNode
+          ClientApp      ClientApp      ClientApp
 ```
 
-The important boundary is between a physical client and the server's SuperLink Fleet API. That boundary is protected by TLS and SuperNode authentication in production.
-
-The ClientApp ↔ SuperNode and ServerApp ↔ SuperLink Runtime/AppIO paths are separate internal communication paths. They are not interchangeable with the Fleet API.
+The external client/server trust boundary is the Fleet API on TCP 9092. The ClientApp ↔ SuperNode and ServerApp ↔ SuperLink Runtime/AppIO connections are local Docker paths and are not substitutes for Fleet security.
 
 ## 4. Flower network channels
 
-The current Docker architecture uses four relevant Flower API ports:
+| Connection | Port | Security | Purpose |
+|---|---:|---|---|
+| ServerApp/SuperExec → SuperLink | 9091 | Internal/plaintext | Server Runtime/AppIO |
+| SuperNode → SuperLink | 9092 | **TLS + SuperNode authentication** | Federated communication |
+| Trainer/registration → SuperLink | 9093 | **TLS** | Control operations |
+| ClientApp/SuperExec → SuperNode | 9094 | Internal/plaintext | Client Runtime/AppIO |
 
-| Connection | Port | Flower API | Production security | Purpose |
-|---|---:|---|---|---|
-| ServerApp/SuperExec → SuperLink | 9091 | Runtime | Internal/plaintext | ServerApp execution and Runtime communication |
-| SuperNode → SuperLink | 9092 | Fleet | **TLS + SuperNode authentication** | Federated communication |
-| Flower CLI/trainer → SuperLink | 9093 | Control | **TLS** | Deployment and control operations |
-| ClientApp/SuperExec → SuperNode | 9094 | Runtime | Internal/plaintext | ClientApp execution and Runtime/AppIO communication |
+A physical client must use the server's LAN DNS name or IP. The Docker-only hostname `superlink` must not be used as a physical federation endpoint.
 
-These APIs are distinct.
-
-In particular:
-
-- `superlink:9092` identifies the Docker-network Fleet endpoint.
-- `superlink:9093` identifies the Docker-network Control endpoint.
-- A physical client must use the server's LAN/DNS endpoint rather than the Docker-only hostname `superlink`.
-- The certificate identity used for a production TLS connection must match the DNS name or IP address used by that connection.
-
-The current `--insecure` options on the ServerApp and ClientApp Runtime/AppIO services do **not** mean that the production Fleet connection is insecure. Runtime/AppIO TLS is a separate hardening item.
+The current `--insecure` options on the ServerApp and ClientApp Runtime/AppIO services are internal-path settings and do not disable Fleet TLS/authentication. Runtime/AppIO TLS remains future hardening.
 
 ## 5. TLS architecture
-
-### 5.1 Trust model
-
-Production TLS uses a federation CA as the trust anchor for the SuperLink server certificate:
-
-```text
-Federation CA
-     |
-     +---- signs ----> SuperLink certificate
-                              |
-                              v
-                        SuperLink server
-                              ^
-                              |
-                       verifies with CA
-                              |
-                         SuperNode
-```
 
 The SuperLink holds:
 
@@ -126,141 +83,56 @@ The SuperLink holds:
 └── superlink.key
 ```
 
-A SuperNode receives only:
+SuperNodes receive only `ca.crt`. The SuperLink certificate must contain a Subject Alternative Name matching the DNS name or IP used by the connecting SuperNode and control client.
+
+For example, if clients connect to `192.168.0.172:9092`, the certificate must contain `IP:192.168.0.172` in its SAN.
+
+The CA private signing key must never be stored in the repository or distributed to clients. The repository-generated starter CA is for controlled development/testing only. Production certificates must come from the organization's approved PKI process.
+
+## 6. SuperNode authentication
+
+TLS establishes trust in the SuperLink endpoint. SuperNode authentication establishes authorization for the connecting client identity. Both controls apply to the production Fleet connection.
+
+Each client has a unique ECDSA P-384 key pair in OpenSSH format:
 
 ```text
-ca.crt
+client-1 private key  → retained only by client-1
+client-1 public key   → registered/authorized on the server
 ```
 
-and uses Flower's `--root-certificates` configuration to verify the SuperLink.
-
-The SuperLink private key is server-only credential material.
-
-### 5.2 Certificate identity
-
-The SuperLink certificate must contain a Subject Alternative Name (SAN) matching the endpoint used by the connecting client or control process.
-
-For example, if a physical client connects to:
-
-```text
-192.168.0.172:9092
-```
-
-then the SuperLink certificate must contain `IP:192.168.0.172` in its SAN.
-
-A Docker service name such as `superlink` is not automatically a valid certificate identity for a physical-host connection.
-
-The endpoint, DNS/IP address, and certificate SAN therefore form one security configuration. Changing one without considering the others can cause TLS verification failure.
-
-### 5.3 Certificate authority handling
-
-The federation CA is a trust anchor and should be treated as security-sensitive infrastructure even though the public CA certificate is not itself secret.
-
-Only the CA certificate should be distributed to clients. The CA private signing key must remain under the approved certificate-management process and must not be stored in the repository.
-
-The repository's starter/development certificate generation exists for controlled integration testing. Production certificates should be issued, stored, renewed, and revoked through the organization's approved PKI process.
-
-## 6. SuperNode authentication architecture
-
-TLS answers:
-
-> “Am I communicating with the trusted SuperLink?”
-
-SuperNode authentication answers:
-
-> “Is this connecting SuperNode authorized to participate?”
-
-These are separate controls and both are required for the production Fleet connection.
-
-### 6.1 SuperNode identity
-
-Each authorized SuperNode has a unique ECDSA P-384 key pair in SSH/OpenSSH format:
-
-```text
-client-1 private key  <---- retained only by client-1
-client-1 public key   <---- registered with SuperLink
-```
-
-The server uses the public key as the authorization record. The corresponding private key proves possession of that identity when the SuperNode connects.
-
-A registered public key does not authorize other keys belonging to the same client ID.
-
-### 6.2 Identity isolation
-
-The physical deployment follows a strict identity-scope rule:
-
-> **One physical client host receives and uses only its own SuperNode authentication private key.**
-
-For example:
-
-```text
-client-1 host
-    └── client-1 private key
-
-client-2 host
-    └── client-2 private key
-
-client-3 host
-    └── client-3 private key
-```
-
-A client host must not receive:
-
-- another client's private authentication key;
-- the SuperLink private key;
-- the CA private signing key;
-- credentials belonging to unrelated federation identities.
-
-The server may hold the public authorization records for all configured clients. That does not mean private credentials for all clients should be distributed to every client host.
-
-### 6.3 Authentication enablement
-
-Production SuperLink authentication is enabled with Flower's:
+The SuperLink enables authentication with:
 
 ```text
 --enable-supernode-auth
 ```
 
-Each production SuperNode is configured with its own private identity through:
+A client uses its own identity with:
 
 ```text
 --auth-supernode-private-key /etc/flower/auth/<client-id>
 ```
 
-The Compose deployment mounts the authentication directory read-only into the SuperNode container.
+A client host must never receive another client's private key, the SuperLink private key, or the CA private signing key.
 
-## 7. Public-key authorization registry
+## 7. Public-key authorization
 
-Generating a SuperNode key pair is not sufficient to authorize it.
-
-The authorization lifecycle is:
+Key generation alone does not authorize a client. The lifecycle is:
 
 ```text
-Generate client key pair
-        |
-        v
-Keep private key on client
-        |
-        +---- transfer public key only ---->
-                                             Server
-                                               |
-                                               v
-                                      Register public key
-                                               |
-                                               v
-                                      Authorized identity
-                                               |
-                                               v
-                                      SuperNode connects
-                                               |
-                              +----------------+----------------+
-                              |                                 |
-                           accepted                          rejected
+Generate key pair
+      |
+      +---- private key stays on client
+      |
+      +---- public key --> server authorization inventory
+                              |
+                              v
+                         Flower registry
+                              |
+                              v
+                         SuperNode access
 ```
 
-Only explicitly authorized public keys should be registered with the SuperLink.
-
-The server-side client inventory associates each configured client ID with its public-key path:
+`clients.yml` is the server-side inventory of authorized public keys:
 
 ```yaml
 clients:
@@ -270,40 +142,21 @@ clients:
     public_key: ./certificates/prod/auth/client-1.pub
 ```
 
-The public-key registry is authorization state, not a secret store.
+The registration service needs public keys, not client private keys.
 
 ## 8. Persistent authorization state
 
-Production SuperLink authorization state must survive container recreation.
-
-The deployment configures Flower with a persistent database path equivalent to:
+SuperLink state is stored outside the container using a database equivalent to:
 
 ```text
 --database /var/lib/flower/superlink.db
 ```
 
-The host state directory is mounted into the SuperLink container and must not be deleted during ordinary restart/recreation operations.
+The host state directory must survive ordinary container recreation. Deleting it is an administrative/security operation because it can alter the federation's authorization state.
 
-The security requirement is:
+The registration workflow also maintains a server-side manifest so that existing Flower registrations can be reconciled without guessing identities from node IDs.
 
-```text
-Container recreation
-       |
-       v
-Persistent host state remains
-       |
-       v
-SuperLink database remains
-       |
-       v
-Registered SuperNode identities remain authorized
-```
-
-Deleting the state database can change the authorization state of the federation and must be treated as an administrative/security operation rather than an ordinary restart.
-
-## 9. Credential handling policy
-
-### 9.1 Credentials that must remain outside Git
+## 9. Credential handling
 
 Never commit:
 
@@ -314,110 +167,71 @@ Never commit:
 - runtime state databases;
 - other deployment-specific secrets.
 
-The repository is configured to ignore local credential/certificate and runtime-state material.
+The generated Compose files mount credential material read-only where the service only consumes it.
 
-### 9.2 Read-only mounts
-
-Production TLS and SuperNode authentication material should be mounted read-only into containers whenever the service only needs to consume the credential.
-
-This reduces the ability of an application container to modify the host credential material.
-
-### 9.3 Least privilege
-
-Each service should receive only the credential material required for its function.
-
-Examples:
+Credential scope follows least privilege:
 
 | Service | Credential scope |
 |---|---|
-| SuperLink | CA, SuperLink certificate, SuperLink private key, persistent authorization state |
+| SuperLink | CA, SuperLink certificate/private key, persistent state |
 | SuperNode | Federation CA + its own private authentication key |
-| Registration service | Federation CA + public authentication keys |
-| ClientApp | No SuperNode private authentication key |
-| ServerApp | No client private authentication keys |
+| Registration service | Federation CA + public client keys |
+| ClientApp | No SuperNode private key |
+| ServerApp | No client private keys |
 
-In particular, the registration service does not need client private keys. It operates using public authorization records.
+## 10. Starter credentials and production credentials
 
-## 10. Production configuration requirements
+The setup helper may generate starter TLS and SuperNode authentication credentials when the expected files do not exist. These credentials make local distributed development reproducible but are **not production PKI credentials**.
 
-Production configuration is validated centrally by `src/deployment_config.py`.
+Setup must never silently overwrite an existing complete credential set. Before production deployment, replace starter material with credentials issued/approved by the federation's credential-management and PKI process.
 
-The server-side production configuration requires:
+Production preparation should verify:
 
-```text
-DEPLOYMENT_PROFILE
-SUPERLINK_ADDRESS
-TLS_ROOT_CERTIFICATES
-SUPERLINK_CERTIFICATE
-SUPERLINK_PRIVATE_KEY
-TLS_CERTIFICATE_HOST_DIR
-SUPERNODE_AUTH_PRIVATE_KEY_DIR
-SUPERNODE_AUTH_HOST_DIR
-SUPERLINK_STATE_HOST_DIR
-SUPERLINK_STATE_DIR
-```
+- CA, certificate, and key files exist and are parseable;
+- the SuperLink certificate chains to the installed CA;
+- the certificate SAN matches `SUPERLINK_HOST`;
+- each configured client has a matching public authentication key;
+- each client host has only its assigned private key;
+- the SuperLink private key is absent from client hosts.
 
-A production client requires the TLS trust configuration, SuperNode authentication paths, and the configured SuperLink address. The client does not require the server's certificate or private key.
+Organizational approval of a credential cannot be determined automatically by this repository and remains an operational responsibility.
 
-The configuration validator also rejects `--insecure` for production Fleet commands.
+## 11. Key rotation and revocation
 
-The security policy is that missing security material is an error; the deployment must not silently fall back to development transport or credentials.
+If a client private key is compromised:
 
-## 11. Development authentication material
+1. Stop the affected SuperNode.
+2. Revoke/unregister the old identity through the SuperLink administration process.
+3. Generate or provision a new approved key pair.
+4. Install the new private key only on the affected client host.
+5. Register the new public key.
+6. Verify the new identity before resuming federation.
 
-The repository provides a development helper for creating local SuperNode authentication identities:
+Do not overwrite a private key while leaving the old public key authorized.
 
-```bash
-python scripts/generate_supernode_auth.py \
-    --output-dir certificates/dev/auth \
-    client-1 client-2 client-3
-```
+Certificate rotation must preserve the trusted CA chain and the SAN identity required by the deployed endpoint.
 
-This is intended for development/integration testing.
+## 12. Network exposure policy
 
-Production credentials should be generated and managed using the organization's approved credential-management and PKI processes. Development-generated identities must not be treated as production trust anchors merely because they are technically usable.
+Only externally required APIs should cross the physical host boundary.
 
-## 12. Key validation and fingerprints
-
-Private keys must never be printed as part of validation.
-
-An OpenSSH private key can be checked without exposing its contents:
-
-```bash
-ssh-keygen -y -f certificates/prod/auth/client-1 > /dev/null
-```
-
-The corresponding public-key fingerprint can be inspected with:
-
-```bash
-ssh-keygen -lf certificates/prod/auth/client-1.pub
-```
-
-Every configured client identity should have a unique public-key fingerprint.
-
-Flower registration expects an OpenSSH ECDSA public key, for example:
+The intended external client path is:
 
 ```text
-ecdsa-sha2-nistp384 AAAA...
+Client SuperNode  ── TCP 9092 ──>  Server SuperLink Fleet API
 ```
 
-A PEM public-key file beginning with:
+Port 9091 is a server-side Runtime/AppIO path and should not be exposed to clients. Port 9094 is local to each client Compose deployment. Port 9093 is an administrative/control interface and should be restricted to the server-side components that require it.
 
-```text
------BEGIN PUBLIC KEY-----
-```
+Host firewalls should restrict Fleet access to participating client hosts where practical.
 
-is not the expected registration format.
-
-## 13. Authentication failure policy
+## 13. Failure behavior
 
 Authentication failures must fail closed.
 
-An unregistered SuperNode, or a SuperNode using a private key that does not correspond to an authorized public key, must not participate in federated communication.
+An unregistered SuperNode or a SuperNode using the wrong private key must not participate. TLS verification failure must not be bypassed by enabling `--insecure`.
 
-Likewise, a TLS validation failure must not be bypassed by switching a production connection to `--insecure`.
-
-The expected production behavior is:
+Expected behavior:
 
 ```text
 TLS validation
@@ -433,47 +247,7 @@ SuperNode authentication
 Authorized federation participation
 ```
 
-## 14. Key rotation and revocation
-
-A SuperNode authentication key represents a persistent authorization identity and must be rotated deliberately.
-
-If a private key is suspected or known to be compromised:
-
-1. Stop the affected SuperNode.
-2. Revoke/unregister the old public-key identity according to the SuperLink administration process.
-3. Generate a new unique key pair through the approved credential-management process.
-4. Deliver only the new private key to the affected physical client.
-5. Register the new public key.
-6. Verify the new identity before resuming federation.
-7. Retain appropriate audit evidence of the rotation.
-
-Do not simply overwrite a private key while leaving the old public key authorized. That creates an authorization mismatch rather than completing a secure rotation.
-
-Certificate rotation must likewise preserve the trusted CA chain and valid SAN identity required by the deployed endpoints.
-
-## 15. Network exposure policy
-
-Only APIs that must be reachable across physical hosts should be exposed across the host network.
-
-The intended production boundary is:
-
-```text
-Physical client hosts
-        |
-        | TCP 9092
-        v
-Server SuperLink Fleet API
-```
-
-The Runtime/AppIO ports are intended for the local Docker deployment and should not be unnecessarily exposed to the physical client network.
-
-The Control API on `9093` is a separate administrative interface and should be reachable only by the deployment/control components that require it.
-
-Host firewalls and network controls should therefore restrict access according to the actual deployment topology rather than exposing all Flower ports indiscriminately.
-
-## 16. Runtime/AppIO TLS boundary
-
-The current security layer intentionally does not claim end-to-end TLS for the internal Runtime/AppIO connections.
+## 14. Runtime/AppIO security boundary
 
 Current status:
 
@@ -484,49 +258,34 @@ Runtime 9091     Internal/plaintext                   FUTURE HARDENING
 Runtime 9094     Internal/plaintext                   FUTURE HARDENING
 ```
 
-Runtime/AppIO TLS requires separate certificate, key, trust, and SAN handling for the relevant services. The SuperLink private key must not be reused as a shared credential for those services.
+Runtime/AppIO TLS requires separate certificate, key, trust, and SAN handling. The SuperLink private key must not be reused as a shared credential for those services.
 
-This boundary is deliberate so that the current security controls remain accurately documented rather than implying broader TLS coverage than the implementation provides.
-
-## 17. Security verification requirements
+## 15. Security verification
 
 A production security verification should demonstrate:
 
-1. An authorized SuperNode can establish the TLS-protected Fleet connection.
-2. An unregistered SuperNode identity is rejected.
-3. A SuperNode using the wrong private key is rejected.
-4. A certificate/SAN mismatch causes TLS verification failure rather than silent acceptance.
-5. Production Fleet commands reject `--insecure`.
-6. Client hosts contain only their own private authentication identity.
-7. The SuperLink private key is absent from client hosts.
-8. SuperNode authorization survives SuperLink container recreation when the persistent state directory is retained.
-9. ClientApp and ServerApp services do not receive unnecessary private authentication credentials.
+1. An authorized SuperNode establishes the TLS-protected Fleet connection.
+2. An unregistered identity is rejected.
+3. A wrong private key is rejected.
+4. A certificate/SAN mismatch causes TLS failure.
+5. Secure production commands reject `--insecure` on Fleet/SuperNode paths.
+6. Client hosts contain only their assigned private identity.
+7. The SuperLink private key is absent from clients.
+8. Authorization survives SuperLink recreation when persistent state is retained.
+9. ClientApp and ServerApp containers do not receive unnecessary private authentication credentials.
 
-Operational commands and the concrete test procedure are maintained in `DISTRIBUTED_DEPLOYMENT.md`.
+The concrete procedure is maintained in `DEPLOYMENT.md`.
 
-## 18. Security limitations and future hardening
+## 16. Security limitations and future hardening
 
-The current implementation establishes TLS and SuperNode authentication for the production Fleet path and TLS for the Control path. It does not by itself provide:
+The current TLS/authentication layer does not by itself provide:
 
 - secure aggregation;
 - differential privacy;
 - protection against malicious or poisoned model updates;
-- end-to-end encryption of Runtime/AppIO traffic;
+- end-to-end Runtime/AppIO encryption;
 - comprehensive centralized audit logging;
 - production PKI lifecycle automation;
-- container/runtime isolation beyond the current Docker configuration;
-- full network segmentation or firewall policy automation.
+- full network segmentation or firewall automation.
 
-These are separate engineering concerns and should not be inferred from the current TLS/authentication layer.
-
-Secure aggregation and privacy mechanisms are planned as later federation-hardening work.
-
-## 19. Documentation scope boundary
-
-This file is the security specification and policy boundary.
-
-- **Security architecture, trust model, credential handling, authentication, key management, and security requirements:** `SECURITY.md`.
-- **Distributed deployment procedure, commands, startup sequence, network setup, verification, acceptance tests, and troubleshooting:** `DISTRIBUTED_DEPLOYMENT.md`.
-- **Project overview, source structure, development workflow, and general usage:** `README.md`.
-
-The deployment guide may reference these security requirements, but should not redefine them. The README may summarize the security posture, but should not become the authoritative security specification.
+These remain separate engineering and operational concerns.
