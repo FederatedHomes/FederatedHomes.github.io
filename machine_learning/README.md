@@ -17,7 +17,7 @@ The framework is built around:
 - **Docker / Docker Compose** for reproducible deployment;
 - a **static HTML interface** that can be served independently through GitHub Pages.
 
-The target operating model is a federation of **two or more physical client devices on the same network**, each maintaining its own local dataset and checkpoint storage. A dedicated server host provides the Flower federation infrastructure, while each client host runs its own authenticated SuperNode and local ClientApp.
+The target operating model is a federation of **two or more client devices**, each maintaining its own local dataset and checkpoint storage. A dedicated server host provides the Flower federation infrastructure, while each client host runs its own authenticated SuperNode and local ClientApp.
 
 ### Current status
 
@@ -25,13 +25,11 @@ The core distributed federation is operational. A two-client physical deployment
 
 The current architecture also includes a production-oriented security layer for the Flower control and federation paths:
 
-- TLS protection for the production Fleet path;
-- TLS protection for the production Control path;
+- TLS protection for the Fleet path;
+- TLS protection for the Control path;
 - per-client SuperNode authentication;
 - server-side public-key registration and authorization state;
 - isolation of private client authentication keys so that each physical client receives only its own identity.
-
-The current ServerApp also applies a minimum-success policy for aggregation: with three sampled clients, `3/3` and `2/3` successful responses may proceed, while `1/3` or `0/3` causes the round to abort.
 
 Runtime/AppIO TLS, secure aggregation, differential privacy, stronger poisoning defenses, expanded audit logging, and additional production hardening remain **planned**; they are not implied by the current TLS and authentication controls.
 
@@ -40,26 +38,22 @@ Runtime/AppIO TLS, secure aggregation, differential privacy, stronger poisoning 
 | Goal | Start here |
 |---|---|
 | Understand the system and current status | `README.md` |
-| Run tests or a single-host federation | [`LOCAL_DEPLOYMENT.md`](LOCAL_DEPLOYMENT.md) |
-| Deploy across physical server/client hosts | [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) |
+| Deploy locally using multiple terminals or deploy to production | [`DEPLOYMENT.md`](DEPLOYMENT.md) |
 | Understand security requirements and trust boundaries | [`SECURITY.md`](SECURITY.md) |
 | Understand documentation ownership and source-of-truth rules | [`DOCUMENTATION_GOVERNANCE.md`](DOCUMENTATION_GOVERNANCE.md) |
 
 ## Documentation model
 
-The project documentation deliberately separates **what the system is**, **how it is deployed**, and **how it is secured**:
+The project separates **what the system is**, **how it is deployed**, and **how it is secured**:
 
 | Document | Purpose |
 |---|---|
 | `README.md` | Executive project summary, architecture, current status, major components, and design intent |
-| `LOCAL_DEPLOYMENT.md` | Local development, testing, single-host Docker federation, and direct host execution |
-| `DISTRIBUTED_DEPLOYMENT.md` | Operational deployment across two or more physical client hosts |
+| `DEPLOYMENT.md` | Single operational runbook for local distributed development and production deployment |
 | `SECURITY.md` | Security architecture, trust boundaries, TLS, authentication, credential handling, and security requirements |
 | `DOCUMENTATION_GOVERNANCE.md` | Documentation ownership, terminology, authoritative sources, and maintenance rules |
 
 > **README explains. Deployment instructs. Security specifies and constrains.**
-
-Detailed commands, environment preparation, Compose generation, registration, startup sequences, and troubleshooting belong in the deployment documents rather than in this executive summary.
 
 ## Architecture
 
@@ -72,7 +66,7 @@ The system uses Flower's **SuperLink / SuperNode / SuperExec** architecture.
                  |       SuperLink       |
                  |                       |
                  | Fleet API   :9092     |
-                 | Control API :9093      |
+                 | Control API :9093     |
                  | Runtime     :9091     |
                  +-----------+-----------+
                              |
@@ -132,28 +126,20 @@ All clients use a shared **DataContract** that defines the model-facing data req
 
 The application validates client data against this contract before model training. Incompatible data is rejected rather than silently entering the federation.
 
-The project therefore separates three concerns:
-
-1. **Local data ownership** — each client retains its own dataset.
-2. **Contract enforcement** — every client must satisfy the same model-facing schema.
-3. **Federated learning** — local model updates contribute to the shared global model.
-
 ## Security architecture
 
-Production federation is designed around explicit trust boundaries.
+The federation is designed around explicit trust boundaries.
 
 - **Fleet communication:** TLS plus SuperNode authentication.
 - **Control communication:** TLS.
-- **Client identity:** one unique SuperNode identity per physical client.
+- **Client identity:** one unique SuperNode identity per client.
 - **Private-key isolation:** client private authentication keys remain on the corresponding client host.
 - **Authorization:** the server maintains the registered public-key inventory and persistent authorization state.
-- **Deployment separation:** development and production configurations are explicitly distinguished.
+- **Credential lifecycle:** local development uses generated starter credentials; production uses approved federation credentials.
 
-`SECURITY.md` is the authoritative security architecture and policy document. It defines the trust model, certificate requirements, authentication behavior, credential handling, key lifecycle, network exposure, current limitations, and future security hardening.
+`SECURITY.md` is the authoritative security architecture and policy document.
 
 ## Repository structure
-
-The repository is organized around the following responsibilities:
 
 ```text
 machine_learning/
@@ -164,12 +150,12 @@ machine_learning/
 ├── setup.sh                     Interactive setup/deployment helper
 ├── Dockerfile.superexec         Shared Flower application runtime image
 ├── Dockerfile.client-registration
-│                                Production registration helper image
-├── .flwr/config.toml            Flower deployment profiles
+│                                Registration helper image
+├── .flwr/config.toml            Flower deployment profile
+├── .example.env                 Single starting environment template
 ├── pyproject.toml               Python project metadata
 ├── requirements.txt             Runtime dependencies for the custom image
-├── LOCAL_DEPLOYMENT.md          Local development and single-host procedures
-├── DISTRIBUTED_DEPLOYMENT.md    Physical multi-host deployment runbook
+├── DEPLOYMENT.md                Local distributed and production deployment runbook
 ├── SECURITY.md                  Security architecture and policy
 └── DOCUMENTATION_GOVERNANCE.md  Documentation ownership and maintenance rules
 ```
@@ -180,34 +166,32 @@ machine_learning/
 - `src/client_app.py` — Flower `ClientApp` executed for participating clients.
 - `src/task.py` — model, preprocessing, training, and local dataset handling.
 - `src/data_contract.py` — shared DataContract and validation logic.
-- `src/deployment_config.py` — deployment profile and production security configuration validation.
-- `scripts/generate_compose.py` — generates Docker Compose services from the configured client inventory.
-- `scripts/client_registration.py` — registers production SuperNode public identities with the Flower Control API.
+- `src/deployment_config.py` — secure deployment configuration validation.
+- `scripts/generate_compose.py` — generates server or single-client Docker Compose configuration.
+- `scripts/client_registration.py` — registers SuperNode public identities with the Flower Control API.
 - `clients.yml` — source of truth for configured federation clients and their server-side public keys.
 
 ## Deployment model
 
-The framework supports two distinct operating modes:
+There is one deployment architecture and one Flower deployment profile.
 
-### Local development
+### Local distributed development
 
-A single host can run the federation components in Docker for application development, testing, and integration validation.
+A single physical machine can simulate a real distributed federation by running the server and each client in separate terminals. The client containers use the machine's LAN-reachable SuperLink address and the same TLS/authentication configuration used in production. Starter credentials are generated automatically when missing.
 
-See [`LOCAL_DEPLOYMENT.md`](LOCAL_DEPLOYMENT.md) for all local setup and execution procedures.
+### Production federation
 
-### Distributed federation
+Production separates the server infrastructure from physical client hosts. The same server/client Compose topology is used, but starter credentials must be replaced with valid federation-approved credentials before production startup.
 
-A production-style federation separates the server infrastructure from physical client hosts. Each client host runs only its assigned client identity and local data environment.
-
-See [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) for the complete operational runbook covering host preparation, TLS, authentication identities, registration, Compose generation, networking, startup, verification, resilience acceptance tests, state persistence, and troubleshooting.
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the complete operational runbook.
 
 ## Compatibility and revision policy
 
-The documented deployment baseline is **Flower 1.33.0**, Python 3, and Docker Compose v2. The exact Python/ML dependency versions remain authoritative in the project dependency files and container definitions rather than being duplicated here.
+The documented deployment baseline is **Flower 1.33.0**, Python 3, and Docker Compose v2. Exact Python/ML dependency versions remain authoritative in the project dependency files and container definitions.
 
-All physical federation hosts must use the **same Git revision** of the application and deployment scripts. The distributed runbook defines the revision synchronization procedure.
+All federation hosts must use the **same Git revision** of the application and deployment scripts.
 
-The checked-in production Flower profile in `.flwr/config.toml` contains a deployment-specific Control API endpoint. When deploying to another network, that endpoint must be changed to the actual server-reachable Control API address and its certificate SAN must match the address used by the trainer.
+The generated Flower configuration uses the `production-deployment` profile and derives the Control API endpoint from `SUPERLINK_HOST`. The SuperLink certificate SAN must match that host.
 
 ## Project direction
 
