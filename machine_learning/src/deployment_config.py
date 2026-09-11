@@ -35,13 +35,13 @@ class DeploymentConfig:
     superlink_address: str
     superlink_control_address: str
     tls_root_certificates: Path
-    superlink_certificate: Path
-    superlink_private_key: Path
+    superlink_certificate: Path | None
+    superlink_private_key: Path | None
     tls_certificate_host_dir: Path
     supernode_auth_private_key_dir: Path
     supernode_auth_host_dir: Path
-    superlink_state_host_dir: Path
-    superlink_state_dir: Path
+    superlink_state_host_dir: Path | None
+    superlink_state_dir: Path | None
 
     @property
     def is_production(self) -> bool:
@@ -52,6 +52,8 @@ class DeploymentConfig:
         return True
 
     def superlink_tls_args(self) -> list[str]:
+        if self.superlink_certificate is None or self.superlink_private_key is None:
+            raise DeploymentConfigError("Server TLS certificate and private key are required for SuperLink configuration.")
         return [
             "--ssl-ca-certfile", str(self.tls_root_certificates),
             "--ssl-certfile", str(self.superlink_certificate),
@@ -62,6 +64,8 @@ class DeploymentConfig:
         return ["--enable-supernode-auth"]
 
     def superlink_state_args(self) -> list[str]:
+        if self.superlink_state_dir is None:
+            raise DeploymentConfigError("SuperLink state directory is required for server configuration.")
         return ["--database", str(self.superlink_state_dir / "superlink.db")]
 
     def supernode_tls_args(self) -> list[str]:
@@ -70,9 +74,7 @@ class DeploymentConfig:
     def supernode_auth_args(self, client_id: str) -> list[str]:
         client_id = client_id.strip() if client_id else ""
         if not client_id or not _SAFE_CLIENT_ID.fullmatch(client_id):
-            raise DeploymentConfigError(
-                "SuperNode authentication requires a client ID containing only letters, numbers, '.', '_' or '-'."
-            )
+            raise DeploymentConfigError("SuperNode authentication requires a client ID containing only letters, numbers, '.', '_' or '-'.")
         return ["--auth-supernode-private-key", str(self.supernode_auth_private_key_dir / client_id)]
 
     def supernode_auth_host_key(self, client_id: str) -> Path:
@@ -116,9 +118,7 @@ def _profile_from_value(value: str | None) -> DeploymentProfile:
     try:
         return DeploymentProfile(normalized)
     except ValueError as exc:
-        raise DeploymentConfigError(
-            f"{PROFILE_ENV} must be '{DEPLOYMENT_PROFILE_VALUE}'; got '{normalized}'."
-        ) from exc
+        raise DeploymentConfigError(f"{PROFILE_ENV} must be '{DEPLOYMENT_PROFILE_VALUE}'; got '{normalized}'.") from exc
 
 
 def _normalize_host(value: str) -> str:
@@ -136,12 +136,7 @@ def _endpoint(host: str, port: int) -> str:
     return f"[{host}]:{port}" if ":" in host and not host.startswith("[") else f"{host}:{port}"
 
 
-def load_deployment_config(
-    environ: Mapping[str, str] | None = None,
-    *,
-    require_files: bool = False,
-    role: str | None = None,
-) -> DeploymentConfig:
+def load_deployment_config(environ: Mapping[str, str] | None = None, *, require_files: bool = False, role: str | None = None) -> DeploymentConfig:
     env = os.environ if environ is None else environ
     resolved_role = (role or env.get(DEPLOYMENT_ROLE_ENV, "server")).strip().lower()
     if resolved_role not in {"server", "client"}:
@@ -153,29 +148,27 @@ def load_deployment_config(
         raise DeploymentConfigError("Production deployment is missing required environment variables: " + ", ".join(missing))
 
     host = _normalize_host(env[SUPERLINK_HOST_ENV])
-    paths = {
-        "tls_root_certificates": Path(env[TLS_ROOT_CERTIFICATES_ENV]),
-        "superlink_certificate": Path(env[SUPERLINK_CERTIFICATE_ENV]),
-        "superlink_private_key": Path(env[SUPERLINK_PRIVATE_KEY_ENV]),
-        "tls_certificate_host_dir": Path(env[TLS_CERTIFICATE_HOST_DIR_ENV]),
-        "supernode_auth_private_key_dir": Path(env[SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV]),
-        "supernode_auth_host_dir": Path(env[SUPERNODE_AUTH_HOST_DIR_ENV]),
-        "superlink_state_host_dir": Path(env[SUPERLINK_STATE_HOST_DIR_ENV]),
-        "superlink_state_dir": Path(env[SUPERLINK_STATE_DIR_ENV]),
-    }
+    tls_root = Path(env[TLS_ROOT_CERTIFICATES_ENV])
+    tls_host_dir = Path(env[TLS_CERTIFICATE_HOST_DIR_ENV])
+    auth_private_dir = Path(env[SUPERNODE_AUTH_PRIVATE_KEY_DIR_ENV])
+    auth_host_dir = Path(env[SUPERNODE_AUTH_HOST_DIR_ENV])
+    certificate = Path(env[SUPERLINK_CERTIFICATE_ENV]) if env.get(SUPERLINK_CERTIFICATE_ENV) else None
+    private_key = Path(env[SUPERLINK_PRIVATE_KEY_ENV]) if env.get(SUPERLINK_PRIVATE_KEY_ENV) else None
+    state_host_dir = Path(env[SUPERLINK_STATE_HOST_DIR_ENV]) if env.get(SUPERLINK_STATE_HOST_DIR_ENV) else None
+    state_dir = Path(env[SUPERLINK_STATE_DIR_ENV]) if env.get(SUPERLINK_STATE_DIR_ENV) else None
+
     if require_files:
-        missing_files = []
-        host_tls_dir = paths["tls_certificate_host_dir"]
-        for name in ("ca.crt", "superlink.crt", "superlink.key"):
-            if resolved_role == "client" and name != "ca.crt":
-                continue
-            if not (host_tls_dir / name).is_file():
-                missing_files.append(f"tls_certificate_host_dir/{name}={host_tls_dir / name}")
-        auth_host_dir = paths["supernode_auth_host_dir"]
+        missing_files: list[str] = []
+        if not tls_root.is_file():
+            missing_files.append(f"TLS_ROOT_CERTIFICATES={tls_root}")
+        if resolved_role == "server":
+            for name, path in (("SUPERLINK_CERTIFICATE", certificate), ("SUPERLINK_PRIVATE_KEY", private_key)):
+                if path is None or not path.is_file():
+                    missing_files.append(f"{name}={path}")
+            if state_host_dir is None or not state_host_dir.is_dir():
+                missing_files.append(f"SUPERLINK_STATE_HOST_DIR={state_host_dir}")
         if not auth_host_dir.is_dir():
-            missing_files.append(f"supernode_auth_host_dir={auth_host_dir}")
-        if resolved_role == "server" and not paths["superlink_state_host_dir"].is_dir():
-            missing_files.append(f"superlink_state_host_dir={paths['superlink_state_host_dir']}")
+            missing_files.append(f"SUPERNODE_AUTH_HOST_DIR={auth_host_dir}")
         if missing_files:
             raise DeploymentConfigError("Production security files/directories were not found: " + ", ".join(missing_files))
 
@@ -184,7 +177,14 @@ def load_deployment_config(
         superlink_host=host,
         superlink_address=_endpoint(host, SUPERLINK_FLEET_PORT),
         superlink_control_address=_endpoint(host, SUPERLINK_CONTROL_PORT),
-        **paths,
+        tls_root_certificates=tls_root,
+        superlink_certificate=certificate,
+        superlink_private_key=private_key,
+        tls_certificate_host_dir=tls_host_dir,
+        supernode_auth_private_key_dir=auth_private_dir,
+        supernode_auth_host_dir=auth_host_dir,
+        superlink_state_host_dir=state_host_dir,
+        superlink_state_dir=state_dir,
     )
 
 
