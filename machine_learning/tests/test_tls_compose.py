@@ -9,8 +9,8 @@ from src.deployment_config import DeploymentConfigError, DeploymentProfile
 
 
 CLIENTS = [
-    {"id": "client1", "data_dir": "./data/client1", "checkpoint_dir": "./checkpoints/client1"},
-    {"id": "client2", "data_dir": "./data/client2", "checkpoint_dir": "./checkpoints/client2"},
+    {"id": "client1", "public_key": "./certificates/prod/auth/client1.pub"},
+    {"id": "client2", "public_key": "./certificates/prod/auth/client2.pub"},
 ]
 
 
@@ -20,8 +20,12 @@ def configure_production_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     key = tmp_path / "superlink.key"
     auth_host_dir = tmp_path / "auth-host"
     state_host_dir = tmp_path / "state" / "superlink"
+    data_dir = tmp_path / "data"
+    checkpoint_dir = tmp_path / "checkpoints"
     auth_host_dir.mkdir()
     state_host_dir.mkdir(parents=True)
+    data_dir.mkdir()
+    checkpoint_dir.mkdir()
     for path in (ca, cert, key):
         path.write_text("test", encoding="utf-8")
     for client in CLIENTS:
@@ -37,6 +41,8 @@ def configure_production_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.setenv("SUPERNODE_AUTH_HOST_DIR", str(auth_host_dir))
     monkeypatch.setenv("SUPERLINK_STATE_HOST_DIR", str(state_host_dir))
     monkeypatch.setenv("SUPERLINK_STATE_DIR", "/var/lib/flower")
+    monkeypatch.setenv("DATA_DIR", str(data_dir))
+    monkeypatch.setenv("CHECKPOINT_DIR", str(checkpoint_dir))
 
 
 def test_production_profile_is_the_only_profile() -> None:
@@ -89,6 +95,11 @@ def test_production_client_compose_contains_only_one_client(monkeypatch: pytest.
     assert compose["services"]["supernode-client1"]["volumes"] == [
         f"{tmp_path}/ca.crt:/etc/flower/tls/ca.crt:ro",
         f"{tmp_path / 'auth-host'}:/etc/flower/auth:ro",
+    ]
+    client_app = compose["services"]["superexec-clientapp-client1"]
+    assert client_app["volumes"] == [
+        f"{tmp_path / 'data'}:/app/data:ro",
+        f"{tmp_path / 'checkpoints'}:/app/checkpoints:rw",
     ]
 
 
