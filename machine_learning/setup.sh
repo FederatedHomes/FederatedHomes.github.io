@@ -199,7 +199,7 @@ PY
 create_directories() {
   local role="$1" client_id="${2:-}"
   if [ "$role" = server ]; then
-    mkdir -p "${SUPERLINK_STATE_HOST_DIR:-./state/superlink}" "./data/global" "./checkpoints/global"
+    mkdir -p "${SUPERLINK_STATE_HOST_DIR:-./state/superlink}" "./data/global" "./checkpoints/global" "${SUPERNODE_AUTH_HOST_DIR:-./certificates/auth}"
     create_starter_tls_material server
   else
     create_starter_client_auth "$client_id"
