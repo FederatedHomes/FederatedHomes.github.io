@@ -244,21 +244,28 @@ def main() -> int:
         return 1
 
     actual_node_ids = {node["node-id"] for node in registered_nodes}
-    known_registry: dict[str, dict[str, str]] = {}
-    for client_id, entry in registry.items():
-        if entry["node-id"] in actual_node_ids:
-            known_registry[client_id] = entry
+    manifest_node_ids = {entry["node-id"] for entry in registry.values()}
 
-    unknown_existing = actual_node_ids - {entry["node-id"] for entry in known_registry.values()}
-    if unknown_existing:
-        print(
-            "ERROR: Flower contains SuperNodes that are not present in the local registration manifest. The Flower list API does not expose public keys, so removing these nodes automatically would risk deleting a valid client.\n"
-            f"Unmanaged node IDs: {', '.join(sorted(unknown_existing))}\n"
-            f"Registration manifest: {REGISTRY_STATE_FILE}\n"
-            "Perform the one-time migration of these existing registrations before enabling automatic stale-node removal.",
-            file=sys.stderr,
-        )
-        return 1
+    # The registration manifest is the authoritative ownership record for this
+    # FederatedHomes SuperLink. Any Flower registration not represented there
+    # is stale and must be removed; the Flower list API does not need to expose
+    # public keys because node ownership is established by our manifest.
+    stale_node_ids = actual_node_ids - manifest_node_ids
+    for node_id in sorted(stale_node_ids):
+        print(f"\nUnregistering stale unmanaged SuperNode {node_id}...", flush=True)
+        ok, detail = unregister_one(home, node_id)
+        if not ok:
+            print(f"  {node_id}: FAILED to unregister: {detail}", file=sys.stderr)
+            return 1
+        print(f"  {node_id}: UNREGISTERED", flush=True)
+
+    actual_node_ids -= stale_node_ids
+
+    known_registry: dict[str, dict[str, str]] = {
+        client_id: entry
+        for client_id, entry in registry.items()
+        if entry["node-id"] in actual_node_ids
+    }
 
     failures: list[str] = []
     for client in clients:
@@ -269,6 +276,7 @@ def main() -> int:
             print(f"  {client_id}: REGISTERED (existing)", flush=True)
             continue
         if entry and entry["public-key-sha256"] != fingerprint:
+            print(f"\nReplacing registration for {client_id} because its public key changed...", flush=True)
             ok, detail = unregister_one(home, entry["node-id"])
             if not ok:
                 print(f"  {client_id}: FAILED to remove old registration: {detail}", file=sys.stderr)
@@ -286,13 +294,14 @@ def main() -> int:
             failures.append(client_id)
             continue
         known_registry[client_id] = {"node-id": node_id, "public-key-sha256": fingerprint}
+        actual_node_ids.add(node_id)
 
     if failures:
         print(f"ERROR: Registration failed for: {', '.join(failures)}", file=sys.stderr)
         return 1
 
-    desired_ids = set(desired_fingerprints)
-    stale_clients = set(known_registry) - desired_ids
+    desired_clients = {client["id"] for client in clients}
+    stale_clients = set(known_registry) - desired_clients
     for client_id in sorted(stale_clients):
         node_id = known_registry[client_id]["node-id"]
         print(f"\nUnregistering stale client {client_id} (node {node_id})...", flush=True)
@@ -303,6 +312,10 @@ def main() -> int:
             continue
         print(f"  {client_id}: UNREGISTERED", flush=True)
         known_registry.pop(client_id, None)
+
+    if failures:
+        print(f"ERROR: Stale registration cleanup failed for: {', '.join(failures)}", file=sys.stderr)
+        return 1
 
     save_registry(known_registry)
     final_ok, final_nodes, final_listing = list_registered(home)
