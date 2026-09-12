@@ -100,19 +100,13 @@ Example:
 ```yaml
 clients:
   - id: client-1
-    data_dir: ./data/client-1
-    checkpoint_dir: ./checkpoints/client-1
-    public_key: ./certificates/prod/auth/client-1.pub
+    public_key: ./certificates/auth/client-1.pub
 
   - id: client-2
-    data_dir: ./data/client-2
-    checkpoint_dir: ./checkpoints/client-2
-    public_key: ./certificates/prod/auth/client-2.pub
+    public_key: ./certificates/auth/client-2.pub
 
   - id: client-3
-    data_dir: ./data/client-3
-    checkpoint_dir: ./checkpoints/client-3
-    public_key: ./certificates/prod/auth/client-3.pub
+    public_key: ./certificates/auth/client-3.pub
 ```
 
 At least two clients are required. Client IDs must be unique.
@@ -145,7 +139,7 @@ Select `Prepare host`, then `Start server infrastructure`.
 Setup creates starter TLS material when it is missing:
 
 ```text
-certificates/prod/tls/
+certificates/tls/
 ├── ca.crt
 ├── superlink.crt
 └── superlink.key
@@ -178,7 +172,7 @@ Select `Prepare host`, then `Start client infrastructure`.
 Setup creates the starter authentication identity if it is missing:
 
 ```text
-certificates/prod/auth/
+certificates/auth/
 ├── client-1
 └── client-1.pub
 ```
@@ -224,7 +218,6 @@ docker-compose.server.yml
 docker-compose.client.yml
 ```
 
-
 ## 6. Production deployment
 
 Production deployment follows the same sequence as local distributed development, but the starter credentials must be replaced with valid federation-approved credentials.
@@ -234,7 +227,7 @@ Production deployment follows the same sequence as local distributed development
 The server requires:
 
 ```text
-certificates/prod/tls/
+certificates/tls/
 ├── ca.crt
 ├── superlink.crt
 └── superlink.key
@@ -249,8 +242,8 @@ The SuperLink private key remains on the server and must never be copied to clie
 Each client host requires:
 
 ```text
-certificates/prod/tls/ca.crt
-certificates/prod/auth/<client-id>
+certificates/tls/ca.crt
+certificates/auth/<client-id>
 ```
 
 The client authentication private key must remain on that client host. The matching public key is installed on the server and referenced by `clients.yml`.
@@ -284,14 +277,13 @@ On the server:
 
 Select `Prepare host`, then `Start server infrastructure`.
 
-
 On each client host:
 
 ```bash
 ./setup.sh
 ```
 
-Select `Prepare host`, then `Start client infrastructure`**`.
+Select `Prepare host`, then `Start client infrastructure`.
 
 After the required clients are online, on the server:
 
@@ -337,7 +329,7 @@ Show the resolved configuration with:
 ./setup.sh
 ```
 
-Select `Show configuration`**`.
+Select `Show configuration`.
 
 If a client cannot connect, check in this order:
 
@@ -359,7 +351,7 @@ Run the automated test suite from the project environment with:
 ./setup.sh
 ```
 
-Select `Run tests`**`.
+Select `Run tests`.
 
 The tests validate deployment configuration, secure Compose generation, DataContract behavior, and application validation.
 
