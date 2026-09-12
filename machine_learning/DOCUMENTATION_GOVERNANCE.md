@@ -1,20 +1,7 @@
-# Machine-learning documentation governance
+# Documentation Governance
 
-This document defines how the documentation under `machine_learning/` is organized, which repository artifacts are authoritative, and how documentation should be maintained as the implementation changes.
+This document defines how the documentation is organized, which repository artifacts are authoritative, and how documentation should be maintained as the implementation changes.
 
-## Documentation ownership
-
-| Document | Owns | Does not own |
-|---|---|---|
-| `README.md` | Executive summary, architecture, status, navigation, design intent | Detailed deployment commands or security policy |
-| `DEPLOYMENT.md` | Local distributed development and production deployment procedure | Authoritative security policy |
-| `SECURITY.md` | Security objectives, trust model, controls, credential policy and limitations | Step-by-step deployment procedure |
-| `CONFIGURATION.md` | Configuration reference and semantics | Application behavior or security policy |
-| `OPERATIONS.md` | Post-deployment lifecycle and operational procedures | Architecture definition |
-
-The last two documents are planned follow-on documentation; they are not yet present on this branch.
-
-> **README explains. Deployment instructs. Security specifies and constrains.**
 
 ## Source of truth
 
@@ -30,7 +17,7 @@ Documentation describes the implementation; it must not become a competing sourc
 | Generated deployment topology | `scripts/generate_compose.py` |
 | Client registration behavior | `scripts/client_registration.py` |
 | Setup workflow and operator menu | `setup.sh` |
-| Application behavior | `src/server_app.py`, `src/client_app.py`, `src/task.py`, `src/data_contract.py` |
+| Machine Learning logic | `src/server_app.py`, `src/client_app.py`, `src/task.py`, `src/data_contract.py` |
 | Automated behavior/acceptance | `tests/` |
 
 When an implementation value changes, update the authoritative artifact first and then review the documentation that explains its meaning or operational impact.
@@ -75,7 +62,7 @@ Do not describe planned security or privacy capabilities as if they were already
 
 ## Documentation change checklist
 
-Before merging a change that affects the machine-learning deployment:
+Before merging a change that affects deployment:
 
 - [ ] Identify the authoritative implementation/configuration artifact.
 - [ ] Identify the documentation owner for the affected behavior.

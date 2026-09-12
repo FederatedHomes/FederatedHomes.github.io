@@ -1,8 +1,8 @@
 # Deployment
 
-This is the single operational runbook for the Flower 1.33.0 / PyTorch federated learning application.
+This is the operational runbook for the Flower 1.33.0 / PyTorch federated learning application.
 
-The framework uses **one deployment architecture** everywhere: a server host runs the Flower SuperLink, ServerApp, trainer, and client-registration service; each client host runs exactly one SuperNode and one ClientApp. There is no all-in-one federation mode and no insecure/local Flower deployment profile.
+The framework architecture includes: a server host that runs the Flower SuperLink, ServerApp, trainer, and client-registration service; each client host runs exactly one SuperNode and one ClientApp.
 
 The difference between local development and production is the credential material:
 
@@ -42,8 +42,8 @@ The server Compose file contains:
 
 Each client Compose file contains exactly:
 
-- one SuperNode for the selected client ID;
-- one ClientApp for that client ID.
+- one `SuperNode` for the selected client ID;
+- one `ClientApp` for that client ID.
 
 Only two host roles are supported: `server` and `client`.
 
@@ -55,7 +55,7 @@ From `machine_learning/`, create the environment file once:
 cp .example.env .env
 ```
 
-`.env` is the single deployment environment template. Do not commit a populated `.env`.
+`.env` is the deployment environment template. Do not share/commit a populated `.env`.
 
 The deployment profile is always:
 
@@ -140,7 +140,7 @@ Then:
 ./setup.sh
 ```
 
-Select **Prepare host**, then **Start server infrastructure**.
+Select `Prepare host`, then `Start server infrastructure`.
 
 Setup creates starter TLS material when it is missing:
 
@@ -173,7 +173,7 @@ Run:
 ./setup.sh
 ```
 
-Select **Prepare host**, then **Start client infrastructure**.
+Select `Prepare host`, then `Start client infrastructure`.
 
 Setup creates the starter authentication identity if it is missing:
 
@@ -224,28 +224,6 @@ docker-compose.server.yml
 docker-compose.client.yml
 ```
 
-Generate the server file with:
-
-```bash
-python3 scripts/generate_compose.py \
-  --config clients.yml \
-  --output docker-compose.server.yml \
-  --profile production \
-  --role server
-```
-
-Generate a client file with:
-
-```bash
-python3 scripts/generate_compose.py \
-  --config clients.yml \
-  --output docker-compose.client.yml \
-  --profile production \
-  --role client \
-  --client-id client-1
-```
-
-`role=all`, `local-deployment`, and `docker-compose.generated.yml` are not supported.
 
 ## 6. Production deployment
 
@@ -304,17 +282,8 @@ On the server:
 ./setup.sh
 ```
 
-Prepare the server, generate the server Compose file, and start:
+Select `Prepare host`, then `Start server infrastructure`.
 
-```bash
-docker compose -f docker-compose.server.yml up -d --build superlink superexec-serverapp
-```
-
-Register the configured clients:
-
-```bash
-docker compose -f docker-compose.server.yml run --rm client-registration
-```
 
 On each client host:
 
@@ -322,11 +291,7 @@ On each client host:
 ./setup.sh
 ```
 
-Prepare the assigned client and start:
-
-```bash
-docker compose -f docker-compose.client.yml up --build
-```
+Select `Prepare host`, then `Start client infrastructure`**`.
 
 After the required clients are online, on the server:
 
@@ -372,7 +337,7 @@ Show the resolved configuration with:
 ./setup.sh
 ```
 
-Select **Show configuration**.
+Select `Show configuration`**`.
 
 If a client cannot connect, check in this order:
 
@@ -391,8 +356,10 @@ If a client cannot connect, check in this order:
 Run the automated test suite from the project environment with:
 
 ```bash
-python3 -m pytest tests/ -v
+./setup.sh
 ```
+
+Select `Run tests`**`.
 
 The tests validate deployment configuration, secure Compose generation, DataContract behavior, and application validation.
 

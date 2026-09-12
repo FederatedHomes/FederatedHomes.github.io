@@ -12,24 +12,18 @@ This project implements a **secure, Docker-based Federated Machine Learning fram
 The framework is built around:
 
 - **Flower 1.33.0** for federated orchestration;
-- **PyTorch** for machine learning;
-- **Python** for application development;
-- **Docker / Docker Compose** for reproducible deployment;
-- a **static HTML interface** that can be served independently through GitHub Pages.
+- **Python + PyTorch** for machine learning;
+- **Docker + Docker Compose** for deployment;
 
 The target operating model is a federation of **two or more client devices**, each maintaining its own local dataset and checkpoint storage. A dedicated server host provides the Flower federation infrastructure, while each client host runs its own authenticated SuperNode and local ClientApp.
 
-### Current status
-
-The core distributed federation is operational. A two-client physical deployment has been successfully trained through the Flower federation, producing a global model from participating client updates.
-
-The current architecture also includes a production-oriented security layer for the Flower control and federation paths:
+The current architecture includes a production-oriented security layer for the Flower control and federation paths:
 
 - TLS protection for the Fleet path;
 - TLS protection for the Control path;
 - per-client SuperNode authentication;
 - server-side public-key registration and authorization state;
-- isolation of private client authentication keys so that each physical client receives only its own identity.
+- isolation of private client authentication keys.
 
 Runtime/AppIO TLS, secure aggregation, differential privacy, stronger poisoning defenses, expanded audit logging, and additional production hardening remain **planned**; they are not implied by the current TLS and authentication controls.
 
@@ -42,32 +36,15 @@ Runtime/AppIO TLS, secure aggregation, differential privacy, stronger poisoning 
 | Understand security requirements and trust boundaries | [`SECURITY.md`](SECURITY.md) |
 | Understand documentation ownership and source-of-truth rules | [`DOCUMENTATION_GOVERNANCE.md`](DOCUMENTATION_GOVERNANCE.md) |
 
-## Documentation model
 
-The project separates **what the system is**, **how it is deployed**, and **how it is secured**:
-
-| Document | Purpose |
-|---|---|
-| `README.md` | Executive project summary, architecture, current status, major components, and design intent |
-| `DEPLOYMENT.md` | Single operational runbook for local distributed development and production deployment |
-| `SECURITY.md` | Security architecture, trust boundaries, TLS, authentication, credential handling, and security requirements |
-| `DOCUMENTATION_GOVERNANCE.md` | Documentation ownership, terminology, authoritative sources, and maintenance rules |
-
-> **README explains. Deployment instructs. Security specifies and constrains.**
 
 ## Architecture
 
 The system uses Flower's **SuperLink / SuperNode / SuperExec** architecture.
 
 ```text
-                         SERVER HOST
-
                  +-----------------------+
-                 |       SuperLink       |
-                 |                       |
-                 | Fleet API   :9092     |
-                 | Control API :9093     |
-                 | Runtime     :9091     |
+                 |      SERVER HOST      |
                  +-----------+-----------+
                              |
                     TLS + authentication
@@ -76,42 +53,11 @@ The system uses Flower's **SuperLink / SuperNode / SuperExec** architecture.
               |              |              |
               v              v              v
         CLIENT HOST A  CLIENT HOST B  CLIENT HOST C
-
-        +-----------+   +-----------+   +-----------+
-        | SuperNode |   | SuperNode |   | SuperNode |
-        | client-1  |   | client-2  |   | client-3  |
-        +-----+-----+   +-----+-----+   +-----+-----+
-              |               |               |
-        ClientApp       ClientApp       ClientApp
-              |               |               |
-         local data       local data       local data
+              |              |              |
+         local data      local data      local data
 ```
 
-At a high level, federated training follows:
-
-```text
-Local client datasets
-        |
-        v
-     ClientApps
-        |
-        v
-    SuperNodes
-        |
-        v
-     SuperLink
-        |
-        v
-     ServerApp
-        |
-        v
-    FedAvg aggregation
-        |
-        v
-     Global model
-```
-
-Raw client datasets remain on their respective client hosts. The federation exchanges the application-defined training results needed to produce the global model rather than requiring the raw datasets to be centralized.
+Raw client datasets remain on their respective client hosts. The federation server exchanges the application-defined training results needed to produce the global model rather than requiring the raw datasets to be centralized.
 
 ## Data and model contract
 
@@ -130,9 +76,9 @@ The application validates client data against this contract before model trainin
 
 The federation is designed around explicit trust boundaries.
 
-- **Fleet communication:** TLS plus SuperNode authentication.
+- **Fleet communication:** TLS plus authentication.
 - **Control communication:** TLS.
-- **Client identity:** one unique SuperNode identity per client.
+- **Client identity:** one unique identity per client.
 - **Private-key isolation:** client private authentication keys remain on the corresponding client host.
 - **Authorization:** the server maintains the registered public-key inventory and persistent authorization state.
 - **Credential lifecycle:** local development uses generated starter credentials; production uses approved federation credentials.
@@ -152,9 +98,9 @@ machine_learning/
 ├── Dockerfile.client-registration
 │                                Registration helper image
 ├── .flwr/config.toml            Flower deployment profile
-├── .example.env                 Single starting environment template
+├── .example.env                 Starting environment template
 ├── pyproject.toml               Python project metadata
-├── requirements.txt             Runtime dependencies for the custom image
+├── requirements.txt             Runtime dependencies for the custom image with machine learning libraries
 ├── DEPLOYMENT.md                Local distributed and production deployment runbook
 ├── SECURITY.md                  Security architecture and policy
 └── DOCUMENTATION_GOVERNANCE.md  Documentation ownership and maintenance rules
@@ -172,8 +118,6 @@ machine_learning/
 - `clients.yml` — source of truth for configured federation clients and their server-side public keys.
 
 ## Deployment model
-
-There is one deployment architecture and one Flower deployment profile.
 
 ### Local distributed development
 
@@ -206,4 +150,4 @@ The roadmap includes:
 5. observability and audit capabilities;
 6. production orchestration and operational hardening.
 
-The architectural goal is to provide a reproducible federation in which **data remains distributed, model training is coordinated centrally, client identities are controlled explicitly, and deployment/security concerns are documented separately from application logic**.
+The architectural goal is to provide a reproducible federation in which **data remains distributed while model training and client identities are centrally but transparently coordinated by the federation server**.
