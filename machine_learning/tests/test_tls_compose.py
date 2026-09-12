@@ -9,8 +9,8 @@ from src.deployment_config import DeploymentConfigError, DeploymentProfile
 
 
 CLIENTS = [
-    {"id": "client1", "public_key": "./certificates/prod/auth/client1.pub"},
-    {"id": "client2", "public_key": "./certificates/prod/auth/client2.pub"},
+    {"id": "client1", "public_key": "./certificates/auth/client1.pub"},
+    {"id": "client2", "public_key": "./certificates/auth/client2.pub"},
 ]
 
 
