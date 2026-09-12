@@ -94,7 +94,7 @@ def build_compose(
             raise ValueError(f"Client ID '{resolved_client_id}' is not defined in clients.yml.")
 
     host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod/tls")
-    host_auth_dir = os.environ.get("SUPERNODE_AUTH_HOST_DIR", "./certificates/prod/auth")
+    host_auth_dir = os.environ.get("SUPERNODE_AUTH_HOST_DIR", "./certificates/auth")
     services: dict[str, dict] = {}
 
     if role == "server":
