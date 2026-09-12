@@ -203,31 +203,17 @@ create_directories() {
     create_starter_tls_material server
   else
     create_starter_client_auth "$client_id"
-    python3 - "$client_id" <<'PY'
-from pathlib import Path
-import sys
-import yaml
-requested = sys.argv[1]
-with Path("clients.yml").open(encoding="utf-8") as handle:
-    clients = (yaml.safe_load(handle) or {}).get("clients", [])
-if len(clients) < 2:
-    raise SystemExit("ERROR: clients.yml must define at least 2 clients.")
-selected = [c for c in clients if str(c.get("id", "")).strip() == requested]
-if not selected:
-    raise SystemExit(f"ERROR: Client ID '{requested}' is not defined in clients.yml.")
-for field in ("data_dir", "checkpoint_dir"):
-    value = str(selected[0].get(field, "")).strip()
-    if not value:
-        raise SystemExit(f"ERROR: Client '{requested}' is missing '{field}'.")
-    Path(value).mkdir(parents=True, exist_ok=True)
-PY
+    local data_dir="${DATA_DIR:-./data}" checkpoint_dir="${CHECKPOINT_DIR:-./checkpoints}"
+    mkdir -p "$data_dir" "$checkpoint_dir"
   fi
 }
 
 validate_auth_environment() {
   local role="$1" client_id="${2:-}"
   python3 - "$role" "$client_id" <<'PY'
+import os
 import sys
+from pathlib import Path
 from src.deployment_config import load_deployment_config
 role, client_id = sys.argv[1], sys.argv[2].strip()
 config = load_deployment_config(role=role, require_files=True)
@@ -236,6 +222,9 @@ print(f"Validated SuperLink Control API: {config.superlink_control_address}")
 if role == "client":
     if not client_id:
         raise SystemExit("ERROR: CLIENT_ID must be set for a client deployment.")
+    for name in ("DATA_DIR", "CHECKPOINT_DIR"):
+        if not os.environ.get(name, "").strip():
+            raise SystemExit(f"ERROR: {name} must be set for a client deployment.")
     private = config.supernode_auth_host_key(client_id)
     public = private.with_name(private.name + ".pub")
     for path in (private, public):
@@ -361,6 +350,8 @@ show_config() {
   echo "Deployment role: ${DEPLOYMENT_ROLE:-unset}"
   echo "Client ID: ${CLIENT_ID:-unset}"
   echo "SuperLink host: ${SUPERLINK_HOST:-unset}"
+  echo "Client data directory: ${DATA_DIR:-unset}"
+  echo "Client checkpoint directory: ${CHECKPOINT_DIR:-unset}"
   python3 - <<'PY'
 from src.deployment_config import load_deployment_config
 try:
