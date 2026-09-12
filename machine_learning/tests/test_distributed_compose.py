@@ -9,8 +9,8 @@ from src.deployment_config import DeploymentProfile
 
 
 CLIENTS = [
-    {"id": "client-1", "data_dir": "./data/client-1", "checkpoint_dir": "./checkpoints/client-1"},
-    {"id": "client-2", "data_dir": "./data/client-2", "checkpoint_dir": "./checkpoints/client-2"},
+    {"id": "client-1", "public_key": "./certificates/prod/auth/client-1.pub"},
+    {"id": "client-2", "public_key": "./certificates/prod/auth/client-2.pub"},
 ]
 
 
@@ -28,6 +28,8 @@ def production_client_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     monkeypatch.setenv("TLS_CERTIFICATE_HOST_DIR", str(tls_dir))
     monkeypatch.setenv("SUPERNODE_AUTH_PRIVATE_KEY_DIR", "/etc/flower/auth")
     monkeypatch.setenv("SUPERNODE_AUTH_HOST_DIR", str(auth_dir))
+    monkeypatch.setenv("DATA_DIR", "./data/client-2")
+    monkeypatch.setenv("CHECKPOINT_DIR", "./checkpoints/client-2")
 
 
 def production_server_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -63,6 +65,8 @@ def test_client_role_contains_only_selected_client(monkeypatch: pytest.MonkeyPat
     node_command = services["supernode-client-2"]["command"]
     assert node_command[node_command.index("--superlink") + 1] == "192.168.1.100:9092"
     assert "--insecure" not in node_command
+    assert "./data/client-2:/app/data:ro" in services["superexec-clientapp-client-2"]["volumes"]
+    assert "./checkpoints/client-2:/app/checkpoints:rw" in services["superexec-clientapp-client-2"]["volumes"]
 
 
 def test_client_role_does_not_require_server_certificate_or_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -70,3 +74,10 @@ def test_client_role_does_not_require_server_certificate_or_state(monkeypatch: p
     compose = build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="client", client_id="client-1")
     assert "supernode-client-1" in compose["services"]
     assert "superexec-clientapp-client-1" in compose["services"]
+
+
+def test_client_role_requires_local_data_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    production_client_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("DATA_DIR")
+    with pytest.raises(ValueError, match="DATA_DIR and CHECKPOINT_DIR"):
+        build_compose(CLIENTS, profile=DeploymentProfile.PRODUCTION, role="client", client_id="client-1")
