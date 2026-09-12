@@ -80,10 +80,11 @@ def build_compose(
         if not resolved_client_id:
             raise ValueError("Client deployment requires --client-id or CLIENT_ID.")
 
-    validate_clients(clients)
     profile_value = profile.value if isinstance(profile, DeploymentProfile) else profile
     if profile_value != DeploymentProfile.PRODUCTION.value:
         raise ValueError("Only the production deployment profile is supported.")
+
+    validate_clients(clients)
     config = load_deployment_config(role=role)
 
     selected_clients = clients
