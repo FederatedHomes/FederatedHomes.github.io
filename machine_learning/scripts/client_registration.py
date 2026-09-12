@@ -187,7 +187,12 @@ def list_registered(home: Path) -> tuple[bool, list[dict[str, str]], str]:
     for node in nodes:
         if not isinstance(node, dict) or not str(node.get("node-id", "")).strip():
             return False, [], "Flower SuperNode list contains an entry without a node-id"
-        normalized.append({"node-id": str(node["node-id"])})
+        normalized.append(
+            {
+                "node-id": str(node["node-id"]),
+                "status": str(node.get("status", "")).strip().lower(),
+            }
+        )
     return True, normalized, output
 
 
@@ -243,13 +248,18 @@ def main() -> int:
         print(f"ERROR: Unable to list Flower SuperNodes: {listing}", file=sys.stderr)
         return 1
 
-    actual_node_ids = {node["node-id"] for node in registered_nodes}
+    # Flower's verbose SuperNode listing includes historical registrations with
+    # status 'unregistered'. They remain visible for audit purposes but are no
+    # longer authorized and cannot be unregistered a second time. Only active
+    # registrations participate in reconciliation.
+    active_nodes = [node for node in registered_nodes if node.get("status") != "unregistered"]
+    actual_node_ids = {node["node-id"] for node in active_nodes}
     manifest_node_ids = {entry["node-id"] for entry in registry.values()}
 
     # The registration manifest is the authoritative ownership record for this
-    # FederatedHomes SuperLink. Any Flower registration not represented there
-    # is stale and must be removed; the Flower list API does not need to expose
-    # public keys because node ownership is established by our manifest.
+    # FederatedHomes SuperLink. Any active Flower registration not represented
+    # there is stale and must be removed; the Flower list API does not need to
+    # expose public keys because node ownership is established by our manifest.
     stale_node_ids = actual_node_ids - manifest_node_ids
     for node_id in sorted(stale_node_ids):
         print(f"\nUnregistering stale unmanaged SuperNode {node_id}...", flush=True)
@@ -322,7 +332,7 @@ def main() -> int:
     if not final_ok:
         print(f"ERROR: Final Flower SuperNode listing failed: {final_listing}", file=sys.stderr)
         return 1
-    final_ids = {node["node-id"] for node in final_nodes}
+    final_ids = {node["node-id"] for node in final_nodes if node.get("status") != "unregistered"}
     expected_ids = {entry["node-id"] for entry in known_registry.values()}
     if final_ids != expected_ids:
         print(
