@@ -164,7 +164,8 @@
             font-size: 2.2rem;
             padding: 10px 12px 10px;
             flex-direction: column;
-            gap: 6px;
+            gap: 0;
+            overflow: visible;
         }
 
         .icon-svg {
@@ -184,11 +185,12 @@
         .hub-icon .icon-svg {
             width: 1.5em;
             height: 1.5em;
+            position: relative;
+            z-index: 1;
         }
 
         .client-label {
-            width: calc(100% - 8px);
-            max-width: 100%;
+            width: 100%;
             color: var(--white);
             font-size: clamp(0.52rem, 0.8vw, 0.8rem);
             font-weight: 700;
@@ -198,9 +200,13 @@
             z-index: 2;
             white-space: nowrap;
             line-height: 1.1;
-            position: relative;
+            position: absolute;
+            left: 50%;
+            top: 15%;
+            transform: translate(-50%, -50%);
             margin: 0;
             padding: 0 2px;
+            display: block;
         }
         .service-label {
             width: calc(100% - 8px);
@@ -368,7 +374,7 @@
             .community-container, .services-container { padding: 25px 10px; }
             .clients-section, .services-section { gap: 22px; }
             .client-icon { width: 72px; height: 72px; font-size: 1.8rem; }
-            .client-label { font-size: clamp(0.48rem, 2vw, 0.58rem); width: calc(100% - 10px); }
+            .client-label { font-size: clamp(0.48rem, 2vw, 0.58rem); width: 100%; }
             .service-icon { width: min(140px, 38vw); min-height: 96px; font-size: 1.6rem; padding: 8px 7px 10px; }
             .service-label { font-size: 0.58rem; line-height: 1.15; }
             .hub-icon { width: 105px; height: 105px; font-size: 2.6rem; }
@@ -387,7 +393,7 @@
         @media (max-width: 400px) {
             h1 { font-size: 1.6rem; }
             .client-icon { width: 64px; height: 64px; font-size: 1.5rem; }
-            .client-label { font-size: clamp(0.44rem, 2.4vw, 0.52rem); width: calc(100% - 12px); }
+            .client-label { font-size: clamp(0.44rem, 2.4vw, 0.52rem); width: 100%; }
             .service-icon { width: min(120px, 42vw); min-height: 90px; font-size: 1.4rem; padding: 7px 6px 9px; }
             .service-label { font-size: 0.52rem; letter-spacing: 0.02em; }
             .hub-icon { width: 92px; height: 92px; font-size: 2.3rem; }
