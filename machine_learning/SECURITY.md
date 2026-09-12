@@ -137,9 +137,7 @@ Generate key pair
 ```yaml
 clients:
   - id: client-1
-    data_dir: ./data/client-1
-    checkpoint_dir: ./checkpoints/client-1
-    public_key: ./certificates/prod/auth/client-1.pub
+    public_key: ./certificates/auth/client-1.pub
 ```
 
 The registration service needs public keys, not client private keys.
