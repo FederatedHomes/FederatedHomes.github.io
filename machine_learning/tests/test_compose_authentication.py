@@ -25,12 +25,14 @@ def production_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SUPERNODE_AUTH_HOST_DIR", str(auth_dir))
     monkeypatch.setenv("SUPERLINK_STATE_HOST_DIR", str(state_dir))
     monkeypatch.setenv("SUPERLINK_STATE_DIR", "/var/lib/flower")
+    monkeypatch.setenv("DATA_DIR", "./data/client-1")
+    monkeypatch.setenv("CHECKPOINT_DIR", "./checkpoints/client-1")
 
 
 def clients() -> list[dict]:
     return [
-        {"id": "client-1", "data_dir": "./data/client-1", "checkpoint_dir": "./checkpoints/client-1"},
-        {"id": "client-2", "data_dir": "./data/client-2", "checkpoint_dir": "./checkpoints/client-2"},
+        {"id": "client-1", "public_key": "./certificates/prod/auth/client-1.pub"},
+        {"id": "client-2", "public_key": "./certificates/prod/auth/client-2.pub"},
     ]
 
 
