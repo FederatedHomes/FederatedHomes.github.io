@@ -31,8 +31,8 @@ def production_env(tmp_path: Path, monkeypatch) -> None:
 
 def clients() -> list[dict]:
     return [
-        {"id": "client-1", "public_key": "./certificates/prod/auth/client-1.pub"},
-        {"id": "client-2", "public_key": "./certificates/prod/auth/client-2.pub"},
+        {"id": "client-1", "public_key": "./certificates/auth/client-1.pub"},
+        {"id": "client-2", "public_key": "./certificates/auth/client-2.pub"},
     ]
 
 
