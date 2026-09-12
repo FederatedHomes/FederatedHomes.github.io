@@ -26,10 +26,12 @@ TLS_CONTAINER_DIR = "/etc/flower/tls"
 AUTH_CONTAINER_DIR = "/etc/flower/auth"
 REGISTRY_STATE_CONTAINER_DIR = "/app/state"
 CLIENT_ID_ENV = "CLIENT_ID"
+DATA_DIR_ENV = "DATA_DIR"
+CHECKPOINT_DIR_ENV = "CHECKPOINT_DIR"
 
 
 def validate_clients(clients: list[dict]) -> None:
-    """Validate fields needed to generate Compose services."""
+    """Validate federation identity fields needed by registration and Compose."""
     if len(clients) < 2:
         raise ValueError("At least 2 clients are required.")
     ids = [str(client.get("id", "")).strip() for client in clients]
@@ -38,9 +40,9 @@ def validate_clients(clients: list[dict]) -> None:
     if len(ids) != len(set(ids)):
         raise ValueError("Client IDs must be unique.")
     for client in clients:
-        for key in ("data_dir", "checkpoint_dir"):
-            if not str(client.get(key, "")).strip():
-                raise ValueError(f"Client '{client['id']}' must define '{key}'.")
+        public_key = str(client.get("public_key", "")).strip()
+        if not public_key:
+            raise ValueError(f"Client '{client.get('id', '')}' must define 'public_key'.")
 
 
 def safe_id(client_id: str) -> str:
@@ -149,6 +151,10 @@ def build_compose(
 
     else:
         current_client_id = str(selected_clients[0]["id"]).strip()
+        data_dir = os.environ.get(DATA_DIR_ENV, "").strip()
+        checkpoint_dir = os.environ.get(CHECKPOINT_DIR_ENV, "").strip()
+        if not data_dir or not checkpoint_dir:
+            raise ValueError("Client deployment requires DATA_DIR and CHECKPOINT_DIR in .env.")
         node = node_name(current_client_id)
         app = app_name(current_client_id)
         supernode_prefix = config.supernode_tls_args()
@@ -179,7 +185,7 @@ def build_compose(
             "env_file": [".env"],
             "command": ["--insecure", "--plugin-type", "clientapp", "--appio-api-address", f"{node}:{SUPERNODE_PORT}"],
             "networks": ["flwr-network"],
-            "volumes": [f"{selected_clients[0]['data_dir']}:/app/data:ro", f"{selected_clients[0]['checkpoint_dir']}:/app/checkpoints:rw"],
+            "volumes": [f"{compose_host_path(Path(data_dir))}:/app/data:ro", f"{compose_host_path(Path(checkpoint_dir))}:/app/checkpoints:rw"],
             "environment": {CLIENT_ID_ENV: current_client_id},
             "depends_on": [node],
         }
