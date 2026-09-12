@@ -93,7 +93,7 @@ def build_compose(
         if not selected_clients:
             raise ValueError(f"Client ID '{resolved_client_id}' is not defined in clients.yml.")
 
-    host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/prod/tls")
+    host_tls_dir = os.environ.get("TLS_CERTIFICATE_HOST_DIR", "./certificates/tls")
     host_auth_dir = os.environ.get("SUPERNODE_AUTH_HOST_DIR", "./certificates/auth")
     services: dict[str, dict] = {}
 
@@ -143,8 +143,8 @@ def build_compose(
             "volumes": [
                 "./.flwr:/app/.flwr:ro",
                 "./clients.yml:/app/clients.yml:ro",
-                f"{host_tls_dir}/ca.crt:/app/certificates/prod/tls/ca.crt:ro",
-                f"{host_auth_dir}:/app/certificates/prod/auth:ro",
+                f"{host_tls_dir}/ca.crt:/app/certificates/tls/ca.crt:ro",
+                f"{host_auth_dir}:/app/certificates/auth:ro",
                 f"{state_host_dir}:{REGISTRY_STATE_CONTAINER_DIR}:rw",
             ],
             "depends_on": ["superlink"],
